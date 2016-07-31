@@ -135,8 +135,7 @@ def instrument_setup(z0_cza, freqs, restore=False):
     if os.path.exists(local_jones0_file) == True:
         return np.load(local_jones0_file)['Jdata']
 
-    fdir_base = os.path.dirname(__file__)
-    fbase = os.path.join(fdir_base,'/HERA_jones_data/HERA_Jones_healpix_')
+    fbase = '/home/zmarti/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
 
     nside_in = 2**8
     fnames = [fbase + str(int(f / 1e6)) + 'MHz.txt' for f in freqs]
@@ -195,6 +194,7 @@ def instrument_setup(z0_cza, freqs, restore=False):
         J_f = irf.inverse_flatten_jones(J_f) # Change shape to (nfreq,npix,2,2), complex-valued
         J_f = transform_basis(p.nside, J_f, z0_cza, R_z0) # right-multiply by the basis transformation matrix from RA/Dec to the Local CST basis.
         Jdata[i,:,:,:] = J_f
+        print i
 
     # If the model at the current nside hasn't been generated before, save it for future reuse.
     if os.path.exists(local_jones0_file) == False:
@@ -420,7 +420,7 @@ def main(p, restore=False, save=False):
     for b_i in range(bl_eq.shape[0]):
         for t in range(p.ntime):
             zl_cza = z0_cza
-            total_angle = 10. # degrees
+            total_angle = 360. # degrees
             zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
 
             RotAxis = np.array([0.,0.,1.])
@@ -518,32 +518,32 @@ class Parameters:
     pass
 
 if __name__ == '__main__':
-    print "Note! Horizon mask is off!"
+    #print "Note! Horizon mask is off!"
     print "Note! Ionosphere set to Identity!"
     #print "Note: Horizon mask turned off!"
     #print "Note! Sky rotation turned off"
-    print "Note! time rotation angle is not 360deg"
+    #print "Note! time rotation angle is not 360deg"
 
     #########
     # Dimensions and Boundaries
 
     p = Parameters()
 
-    p.nside = 2**6 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**8 # sets the spatial resolution of the simulation, for a given baseline
 
-    p.nfreq = 41 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 10  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 144  # the number of time samples in one rotation of the earch that will be computed
 
     p.ndays = 1 # The number of days that will be simulated.
 
-    p.nu_0 = 1.5e8 # Hz. The high end of the simulated frequency band.
+    p.nu_0 = 1.4e8 # Hz. The high end of the simulated frequency band.
 
     p.nu_f = 1.7e8 # Hz. The low end of the simulated frequency band.
 
     p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
 
-    p.baselines = [[15.,0,0],[15.,0,0]]
+    p.baselines = [[30.,0,0],[0.,30.,0]]
 
     p.nbaseline = len(p.baselines)
 
