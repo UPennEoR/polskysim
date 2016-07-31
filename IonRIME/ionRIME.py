@@ -135,7 +135,8 @@ def instrument_setup(z0_cza, freqs, restore=False):
     if os.path.exists(local_jones0_file) == True:
         return np.load(local_jones0_file)['Jdata']
 
-    fbase = '/home/zmart/radcos/zradiopol/HERA_jones_data/HERA_Jones_healpix_'
+    fdir_base = os.path.dirname(__file__)
+    fbase = os.path.join(fdir_base,'/HERA_jones_data/HERA_Jones_healpix_')
 
     nside_in = 2**8
     fnames = [fbase + str(int(f / 1e6)) + 'MHz.txt' for f in freqs]
