@@ -125,15 +125,15 @@ def instrument_setup(z0_cza, freqs, restore=False):
     nuf = str(int(p.nu_axis[-1] / 1e6))
     band_str = nu0 + "-" + nuf
 
-    restore_name = p.interp_type + "_" + "band_" + band_str + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npz"
+    restore_name = p.interp_type + "_" + "band_" + band_str + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
 
     if os.path.exists('jones_save/' + restore_name) == True:
-        return (np.load('jones_save/' + restore_name))['J_out']
+        return np.load('jones_save/' + restore_name)
 
-    local_jones0_file = 'local_jones0/nside' + str(p.nside) + '_band' + band_str + '_Jdata.npz'
+    local_jones0_file = 'local_jones0/nside' + str(p.nside) + '_band' + band_str + '_Jdata.npy'
 
     if os.path.exists(local_jones0_file) == True:
-        return np.load(local_jones0_file)['Jdata']
+        return np.load(local_jones0_file)
 
     fbase = '/home/zmarti/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
 
@@ -198,7 +198,7 @@ def instrument_setup(z0_cza, freqs, restore=False):
 
     # If the model at the current nside hasn't been generated before, save it for future reuse.
     if os.path.exists(local_jones0_file) == False:
-        np.savez(local_jones0_file, Jdata=Jdata)
+        np.save(local_jones0_file, Jdata)
 
     return Jdata
 
@@ -308,8 +308,8 @@ def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic', save
     if save == True:
         nu0 = str(int(p.nu_axis[0] / 1e6))
         nuf = str(int(p.nu_axis[-1] / 1e6))
-        fname = p.interp_type + "_" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npz"
-        np.savez('jones_save/' + fname, J_out=J_out)
+        fname = p.interp_type + "_" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
+        np.save('jones_save/' + fname, J_out)
     return J_out
 
 def main(p, restore=False, save=False):
@@ -363,7 +363,7 @@ def main(p, restore=False, save=False):
     ijones_init.shape = (nfreq_in, npix, 2,2)
     nfreq > nfreq_in
     """
-    freqs = [x * 1e6 for x in range(150,171)] # Hz
+    freqs = [x * 1e6 for x in range(140,171)] # Hz
     # freqs = [(100 + 10 * x) * 1e6 for x in range(11)] # Hz. Must be converted to MHz for file list.
     #freqs = [140, 150, 160]
     tmark0 = time.clock()
@@ -383,8 +383,8 @@ def main(p, restore=False, save=False):
     else:
         nu0 = str(int(p.nu_axis[0] / 1e6))
         nuf = str(int(p.nu_axis[-1] / 1e6))
-        fname = "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npz"
-        ijones = (np.load('jones_save/' + fname))['J_out']
+        fname = "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
+        ijones = np.load('jones_save/' + fname)
         print "Restored Jones model"
 
     ijonesH = np.transpose(ijones.conj(),(0,1,3,2))
@@ -457,7 +457,7 @@ def main(p, restore=False, save=False):
 
 
             for nu_i, nu in enumerate(p.nu_axis):
-                #print "t is " + str(t) + ", nu_i is " + str(nu_i)
+                print "t is " + str(t) + ", nu_i is " + str(nu_i)
 
                 ## Ionosphere
                 """
@@ -529,11 +529,11 @@ if __name__ == '__main__':
 
     p = Parameters()
 
-    p.nside = 2**8 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
 
-    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 61 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 144  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
 
     p.ndays = 1 # The number of days that will be simulated.
 
@@ -543,7 +543,7 @@ if __name__ == '__main__':
 
     p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
 
-    p.baselines = [[30.,0,0],[0.,30.,0]]
+    p.baselines = [[15.,0,0],[0.,15.,0]]
 
     p.nbaseline = len(p.baselines)
 
