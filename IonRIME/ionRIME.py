@@ -312,11 +312,24 @@ def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic', save
         np.save('jones_save/' + fname, J_out)
     return J_out
 
+def map2alm(marr, lmax):
+    """
+    Vectorized hp.map2alm
+    """
+    return np.apply_along_axis(lambda m: hp.map2alm(m, lmax=lmax),1,marr)
+
+def alm2map(almarr, nside):
+    """
+    Vectorized hp.alm2map
+    """
+    return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside), 1, almarr)
+
 def main(p, restore=False, save=False):
 
     npix = hp.nside2npix(p.nside)
     hpxidx = np.arange(npix)
     cza, ra = hp.pix2ang(p.nside, hpxidx)
+    l,m = hp.Alm.getlm(p.lmax)
 
     z0_cza = np.radians(120.7215)
     z0_ra = np.radians(0.)
@@ -330,6 +343,8 @@ def main(p, restore=False, save=False):
     if True:
         I = get_gsm_cube()
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+
+        I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(m, lmax), [I,Q,U,V])
 
     if False:
         I = np.ones((p.nfreq,npix))
@@ -432,16 +447,19 @@ def main(p, restore=False, save=False):
             # Ut = U
             # Vt = V
 
-            It = np.zeros_like(I)
-            Qt = np.zeros_like(Q)
-            Ut = np.zeros_like(U)
-            Vt = np.zeros_like(V)
+            # It = np.zeros_like(I)
+            # Qt = np.zeros_like(Q)
+            # Ut = np.zeros_like(U)
+            # Vt = np.zeros_like(V)
+            #
+            # for i in range(p.nfreq):
+            #     It[i] = irf.rotate_healpix_mindex(I[i], R_t)
+            #     Qt[i] = irf.rotate_healpix_mindex(Q[i], R_t)
+            #     Ut[i] = irf.rotate_healpix_mindex(U[i], R_t)
+            #     Vt[i] = irf.rotate_healpix_mindex(V[i], R_t)
 
-            for i in range(p.nfreq):
-                It[i] = irf.rotate_healpix_mindex(I[i], R_t)
-                Qt[i] = irf.rotate_healpix_mindex(Q[i], R_t)
-                Ut[i] = irf.rotate_healpix_mindex(U[i], R_t)
-                Vt[i] = irf.rotate_healpix_mindex(V[i], R_t)
+            mrot = np.outer(np.ones(p.nfreq), np.exp(1j * m * RotAngle))
+            It, Qt, Ut, Vt = map(lambda alm: alm2map(alm, p.nside), [I_alm * mrot, Q_alm * mrot, U_alm * mrot, V_alm * mrot])
 
             sky_t = np.array([
                 [It + Qt, Ut - 1j*Vt],
@@ -530,6 +548,8 @@ if __name__ == '__main__':
     p = Parameters()
 
     p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
+
+    p.lmax = 3 * p.nside - 1
 
     p.nfreq = 61 # the number of frequency channels at which visibilities will be computed.
 
