@@ -369,17 +369,6 @@ def main(p, restore=False, save=False):
 
     ijonesH = np.transpose(ijones.conj(),(0,1,3,2))
 
-        # ## Basis rotation
-        # """
-        # Rb.shape = (npix, 2, 2)
-        # """
-        # cosX, sinX = sbr.spherical_CSTbasis_rotation_components(nside, z0_cza * d2r, z0_ra * d2r)
-        # Rb = np.array([
-        #     [cosX, sinX],
-        #     [-sinX, cosX]])
-        # Rb = np.transpose(Rb,(2,0,1))
-        # RbT = np.transpose(Rb,(0,2,1))
-
     ## Baselines
     bl_eq = irf.transform_baselines(p.baselines) # get baseline vectors in equatorial coordinates
 
@@ -429,7 +418,7 @@ def main(p, restore=False, save=False):
 
             sky_t = np.array([
                 [It + Qt, Ut - 1j*Vt],
-                [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1)
+                [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
                 # Could do this iteratively! Define the differential rotation
                 # and apply it in-place to the same sky tensor at each step of the time loop.
             #ijones_t = irf.rotate_jones(ijones, R_t, multiway=True)
