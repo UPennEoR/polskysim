@@ -39,7 +39,7 @@ def RIME_integral(C, K, V):
         for j in range(2):
             for pi in range(C.shape[0]):
                 V[i, j] += C[pi,i,j]*K[pi]
-    V /= np.float(np.size(K))
+#    V /= np.float(np.size(K))
 
 ## Old versions
 # @jit(nopython=True)

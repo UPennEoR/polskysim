@@ -501,7 +501,7 @@ def main(p, restore=False, save=False):
             #     # reduce(M, [ijones[nu_i],ion_rot[nu_i]])
             #
             #     Vis[b_i,t,nu_i,:,:] = RIME_integral(C, K, Vis[b_i,t,nu_i,:,:].squeeze())
-
+    Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.clock()
     print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
     print "Full run in " + str(tmark_loopstop -tmark0) + " seconds."
@@ -534,7 +534,7 @@ if __name__ == '__main__':
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 61 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 611 # the number of frequency channels at which visibilities will be computed.
 
     p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
 
@@ -547,6 +547,7 @@ if __name__ == '__main__':
     p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
 
     p.baselines = [[15.,0,0],[0.,15.,0]]
+#    p.baselines = [[15.,0,0]]
 
     p.nbaseline = len(p.baselines)
 
