@@ -75,7 +75,7 @@ def transform_basis(nside, jones, z0_cza, R_z0):
     basis_rot = np.array([[cosX, sinX],[-sinX, cosX]])
     basis_rot = np.transpose(basis_rot,(2,0,1))
 
-    return M(jones, basis_rot)
+    return irnf.M(jones, basis_rot)
 
 def instrument_setup(z0_cza, freqs, restore=False):
     """
@@ -90,20 +90,22 @@ def instrument_setup(z0_cza, freqs, restore=False):
     nuf = str(int(p.nu_axis[-1] / 1e6))
     band_str = nu0 + "-" + nuf
 
-    restore_name = p.interp_type + "_" + "band_" + band_str + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
-
-    if os.path.exists('jones_save/' + restore_name) == True:
-        return np.load('jones_save/' + restore_name)
-
+    # restore_name = p.interp_type + "_" + "band_" + band_str + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
+    #
+    # if os.path.exists('jones_save/' + restore_name) == True:
+    #     return np.load('jones_save/' + restore_name)
+    #
     local_jones0_file = 'local_jones0/nside' + str(p.nside) + '_band' + band_str + '_Jdata.npy'
 
     if os.path.exists(local_jones0_file) == True:
         return np.load(local_jones0_file)
 
-    fbase = '/home/zmarti/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
+    #fbase = '/home/zmarti/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
+    fbase = '/home/zmart/radcos/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
 
     nside_in = 2**8
     fnames = [fbase + str(int(f / 1e6)) + 'MHz.txt' for f in freqs]
+    nfreq_nodes = len(freqs)
 
     npix = hp.nside2npix(nside_in)
     hpxidx = np.arange(npix)
@@ -124,7 +126,7 @@ def instrument_setup(z0_cza, freqs, restore=False):
     # added some padding. Idea being to allow for some interpolation near the horizon. Questionable.
     npix_out = hp.nside2npix(p.nside)
 
-    Jdata = np.zeros((p.nfreq,npix_out,2,2),dtype='complex128')
+    Jdata = np.zeros((nfreq_nodes,npix_out,2,2),dtype='complex128')
     for i,f in enumerate(fnames):
         J_f = np.loadtxt(f) # J_f.shape = (npix_in, 8)
 
@@ -287,7 +289,7 @@ def alm2map(almarr, nside):
     """
     Vectorized hp.alm2map
     """
-    return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside), 1, almarr)
+    return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
 def main(p, restore=False, save=False):
 
@@ -309,7 +311,7 @@ def main(p, restore=False, save=False):
         I = get_gsm_cube()
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
-        I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(m, lmax), [I,Q,U,V])
+        I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
 
     if False:
         I = np.ones((p.nfreq,npix))
@@ -338,19 +340,23 @@ def main(p, restore=False, save=False):
 
     ## Instrument
     """
-    Jdata = (nfreq, npix, )
-    ijones.shape = (nfreq, npix, 2,2)
-    ijones_init.shape = (nfreq_in, npix, 2,2)
-    nfreq > nfreq_in
+    Jdata.shape = (nfreq_in, p.npix, 2, 2)
+    ijones.shape = (p.nfreq, p.npix, 2, 2)
     """
     freqs = [x * 1e6 for x in range(140,171)] # Hz
     # freqs = [(100 + 10 * x) * 1e6 for x in range(11)] # Hz. Must be converted to MHz for file list.
     #freqs = [140, 150, 160]
     tmark0 = time.clock()
 
-    if restore == False:
+    nu0 = str(int(p.nu_axis[0] / 1e6))
+    nuf = str(int(p.nu_axis[-1] / 1e6))
+    fname = p.interp_type + "_band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
+
+    if os.path.exists('jones_save/' + fname) == True:
+        ijones = np.load('jones_save/' + fname)
+        print "Restored Jones model"
+    else:
         Jdata = instrument_setup(z0_cza, freqs, restore=restore)
-        #np.savez('var_test/Jdata_test.npz', Jdata=Jdata)
 
         tmark_inst = time.clock()
         print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
@@ -360,12 +366,6 @@ def main(p, restore=False, save=False):
         tmark_interp = time.clock()
         print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
 
-    else:
-        nu0 = str(int(p.nu_axis[0] / 1e6))
-        nuf = str(int(p.nu_axis[-1] / 1e6))
-        fname = "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
-        ijones = np.load('jones_save/' + fname)
-        print "Restored Jones model"
 
     ijonesH = np.transpose(ijones.conj(),(0,1,3,2))
 
@@ -468,7 +468,8 @@ def main(p, restore=False, save=False):
             tau = b_dot_s / c
             K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
 
-            C = irnf.compose_4M(ijones, ion_rot, sky_t, iot_rotT, ijonesH)
+            C = np.zeros_like(sky_t)
+            irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
 
             irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
 

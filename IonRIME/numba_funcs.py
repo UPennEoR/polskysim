@@ -1,5 +1,6 @@
 from numba import jit
 from numba import guvectorize
+import numpy as np
 
 @jit(nopython=True)
 def M(m1,m2):
@@ -21,13 +22,11 @@ def M(m1,m2):
     return m_out
 
 @jit(nopython=True)
-def compose_4M(m1,m2,m3,m4,m5):
-    C = np.zeros_like(M1)
+def compose_4M(m1,m2,m3,m4,m5,C):
     for nu_i in range(C.shape[0]):
         C[nu_i] = M(M(M(M(m1[nu_i],m2[nu_i]),m3[nu_i]),m4[nu_i,]),m5[nu_i])
-    return C
 
-@guvectorize('complex128[:,:,:],complex128[:]', '(n, i, j),(n)->(i,j)')
+@guvectorize('complex128[:,:,:],complex128[:], complex128[:,:]', '(n, i, j),(n)->(i,j)')
 def RIME_integral(C, K, V):
     """
     C.shape = (npix, 2, 2)
@@ -38,7 +37,7 @@ def RIME_integral(C, K, V):
     """
     for i in range(2):
         for j in range(2):
-            for pi in range(npix):
+            for pi in range(C.shape[0]):
                 V[i, j] += C[pi,i,j]*K[pi]
     V /= np.float(np.size(K))
 
