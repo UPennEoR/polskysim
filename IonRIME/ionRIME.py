@@ -8,42 +8,7 @@ import astropy.coordinates as coord
 import astropy.units as units
 import gsm2016
 import time
-from numba import jit
-
-@jit
-def M(m1,m2):
-    """
-    Computes the matrix multiplication of two arrays of matricies m1 and m2.
-    m1.shape = m2.shape = (N,2,2)
-    For each n < N, m_out is the product of the 2x2 matricies m1[n,:,:].m2[n,:,:],
-    where the first index of the matrix corresponds to a row, and the second
-    corresponds to a column.
-
-    Made double-plus-gooder by the @jit decorator from the numba package.
-    """
-    m_out = np.zeros_like(m1)
-    for n in range(len(m1[:,0,0])):
-        for i in range(2):
-            for j in range(2):
-                for k in range(2):
-                    m_out[n,i,k] += m1[n,i,j] * m2[n,j,k]
-    return m_out
-
-@jit
-def RIME_integral(C, K, V):
-    """
-    C.shape = (npix, 2, 2)
-    K.shape = (npix,)
-
-    For each component of the 2x2 coherency tensor field C, sum the product
-    C(p)_ij * exp(-2 * pi * i * b.s(p) ) to produce a model visibility V(b)_ij.
-    """
-    npix = np.size(K)
-    for i in range(2):
-        for j in range(2):
-            for pi in range(npix):
-                V[i, j] += C[pi,i,j]*K[pi]
-    return V / np.float(npix)
+import numba_funcs as irnf
 
 def Hz2GHz(freq):
     return freq / 1e9
@@ -434,6 +399,7 @@ def main(p, restore=False, save=False):
 
     for b_i in range(bl_eq.shape[0]):
         for t in range(p.ntime):
+            print "t is " + str(t)
             zl_cza = z0_cza
             total_angle = 360. # degrees
             zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
@@ -474,50 +440,66 @@ def main(p, restore=False, save=False):
                 beam_track += Bt / float(p.ntime)
 
 
-            for nu_i, nu in enumerate(p.nu_axis):
-                print "t is " + str(t) + ", nu_i is " + str(nu_i)
 
-                ## Ionosphere
-                """
-                ionrot.shape = (p.nfreq,npix 2,2)
-                """
+            ## Ionosphere
+            """
+            ionrot.shape = (p.nfreq,npix 2,2)
+            """
 
-                # RMangle = 2. * np.pi * np.random.rand(p.nfreq,npix)
-                # ion_cos = np.cos(RMangle)
-                # ion_sin = np.sin(RMangle)
-                ion_cos = np.ones((p.nfreq, npix))
-                ion_sin = np.zeros((p.nfreq, npix))
-                ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
-                ion_rot = np.transpose(ion_rot,(2,3,0,1))
-                ion_rotT = np.transpose(ion_rot,(0,1,3,2))
-                # worried abou this...is the last line producing the right ordering,
-                # or is ion_rot unchanged
+            # RMangle = get_rm_map()
+            # ion_cos = np.cos(RMangle)
+            # ion_sin = np.sin(RMangle)
+            ion_cos = np.ones((p.nfreq, npix))
+            ion_sin = np.zeros((p.nfreq, npix))
+            ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
+            ion_rot = np.transpose(ion_rot,(2,3,0,1))
+            ion_rotT = np.transpose(ion_rot,(0,1,3,2))
+            # worried abou this...is the last line producing the right ordering,
+            # or is ion_rot unchanged
 
-                ## Fringe
-                """K.shape = (npix)"""
+            ##
+            """
+            K.shape = (nfreq,npix)
+            """
+            c = 299792458. # meters / sec
+            b = bl_eq[b_i]# meters, in the Equatorial basis
+            s = hp.pix2vec(p.nside, hpxidx)
+            b_dot_s = np.einsum('a...,a...',b,s)
+            tau = b_dot_s / c
+            K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
 
-                c = 299792458. # meters / sec
-                b = bl_eq[b_i]# meters, in the Equatorial basis
-                s = hp.pix2vec(p.nside, hpxidx)
-                b_dot_s = np.einsum('a...,a...',b,s)
-                tau = b_dot_s / c
-                K = np.exp(-2. * np.pi * 1j * tau * nu)
+            C = irnf.compose_4M(ijones, ion_rot, sky_t, iot_rotT, ijonesH)
 
+            irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
 
-                # Oleg, eat your heart out
-                compose_4M = lambda a,b,c,d,e: M(M(M(M(a,b),c),d),e)
-
-                C = compose_4M(
-                    ijones[nu_i],
-                    ion_rot[nu_i],
-                    sky_t[nu_i],
-                    ion_rotT[nu_i],
-                    ijonesH[nu_i])
-
-                # could also be:
-                # reduce(M, [ijones[nu_i],ion_rot[nu_i]])
-
-                Vis[b_i,t,nu_i,:,:] = RIME_integral(C, K, Vis[b_i,t,nu_i,:,:].squeeze())
+            # for nu_i, nu in enumerate(p.nu_axis):
+            #     print "t is " + str(t) + ", nu_i is " + str(nu_i)
+            #
+            #     ## Fringe
+            #     """K.shape = (npix)"""
+            #
+            #     # c = 299792458. # meters / sec
+            #     # b = bl_eq[b_i]# meters, in the Equatorial basis
+            #     # s = hp.pix2vec(p.nside, hpxidx)
+            #     # b_dot_s = np.einsum('a...,a...',b,s)
+            #     # tau = b_dot_s / c
+            #     # K = np.exp(-2. * np.pi * 1j * tau * nu)
+            #
+            #
+            #     # Oleg, eat your heart out
+            #     compose_4M = lambda a,b,c,d,e: M(M(M(M(a,b),c),d),e)
+            #
+            #     C = compose_4M(
+            #         ijones[nu_i],
+            #         ion_rot[nu_i],
+            #         sky_t[nu_i],
+            #         ion_rotT[nu_i],
+            #         ijonesH[nu_i])
+            #
+            #     # could also be:
+            #     # reduce(M, [ijones[nu_i],ion_rot[nu_i]])
+            #
+            #     Vis[b_i,t,nu_i,:,:] = RIME_integral(C, K, Vis[b_i,t,nu_i,:,:].squeeze())
 
     tmark_loopstop = time.clock()
     print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
