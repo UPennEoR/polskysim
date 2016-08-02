@@ -26,7 +26,7 @@ def compose_4M(m1,m2,m3,m4,m5,C):
     for nu_i in range(C.shape[0]):
         C[nu_i] = M(M(M(M(m1[nu_i],m2[nu_i]),m3[nu_i]),m4[nu_i,]),m5[nu_i])
 
-@guvectorize('complex128[:,:,:],complex128[:], complex128[:,:]', '(n, i, j),(n)->(i,j)')
+@guvectorize('complex128[:,:,:],complex128[:], complex128[:,:]', '(n, i, j),(n)->(i,j)', nopython=True)
 def RIME_integral(C, K, V):
     """
     C.shape = (npix, 2, 2)
