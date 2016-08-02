@@ -509,7 +509,7 @@ def main(p, restore=False, save=False):
     out_name = "Vis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
 
     #if os.path.exists(out_name) == False:
-    np.savez('output_vis/' + out_name, Vis=Vis)
+    np.savez('output_vis/' + out_name, Vis=Vis, baselines=p.baselines)
     if debug == True:
         np.savez('debug/source_index.npz', source_index=source_index)
         np.savez('debug/beam_track.npz', beam_track=beam_track)
@@ -534,9 +534,9 @@ if __name__ == '__main__':
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 61 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 121 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 720  # the number of time samples in one rotation of the earch that will be computed
 
     p.ndays = 1 # The number of days that will be simulated.
 
@@ -546,8 +546,8 @@ if __name__ == '__main__':
 
     p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
 
-    p.baselines = [[15.,0,0],[0.,15.,0]]
-#    p.baselines = [[15.,0,0]]
+#    p.baselines = [[15.,0,0],[0.,15.,0]]
+    p.baselines = [[7.,14.,0]]
 
     p.nbaseline = len(p.baselines)
 
