@@ -534,7 +534,7 @@ if __name__ == '__main__':
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 611 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 61 # the number of frequency channels at which visibilities will be computed.
 
     p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
 
