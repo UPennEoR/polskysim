@@ -8,6 +8,7 @@ import astropy.coordinates as coord
 import astropy.units as units
 import time
 import numba_funcs as irnf
+import radiono
 
 def Hz2GHz(freq):
     return freq / 1e9
@@ -457,7 +458,15 @@ def main(p, restore=False, save=False):
         I = get_gsm_cube()
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
-        I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
+    if False:
+        ## input sky model here!
+
+        I = 0
+        Q = 0
+        U = 0
+        V = 0
+
+    I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
 
     ## Instrument
     """
@@ -506,7 +515,6 @@ def main(p, restore=False, save=False):
 
             tmark_interp = time.clock()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
-
 
     ijonesH = np.transpose(ijones.conj(),(0,1,3,2))
 
@@ -658,7 +666,7 @@ if __name__ == '__main__':
     #print "Note: Horizon mask turned off!"
     #print "Note! Sky rotation turned off"
     #print "Note! time rotation angle is not 360deg"
-    print "Note! Using PAPER instrument"
+    #print "Note! Using PAPER instrument"
 
     #########
     # Dimensions and Boundaries
@@ -690,7 +698,7 @@ if __name__ == '__main__':
     # options for interpolation are:
     # 'linear' and 'cubic', both via scipy.interpolate.interp1d()
 
-    p.PAPER_instrument = True # hack hack hack
+    p.PAPER_instrument = False # hack hack hack
 
     ## OLD OPTIONS
     #   'linear' : linear interpolation between nodes
