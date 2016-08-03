@@ -104,12 +104,18 @@ def PAPER_instrument_setup(z0_cza):
     nthetaF = 91 # don't think these are used
     nphiF = 73
 
-    jonesFnodes = np.zeros((nfreq,npixF,2,2), dtype='complex128')
+    jonesFnodes_ludwig = np.zeros((nfreq,npixF,2,2), dtype='complex128')
     for f in range(nfreq):
-        jonesFnodes[f,:,0,0] = fekoX.fields[f].etheta
-        jonesFnodes[f,:,0,1] = fekoX.fields[f].ephi
-        jonesFnodes[f,:,1,0] = fekoY.fields[f].etheta
-        jonesFnodes[f,:,1,1] = fekoY.fields[f].ephi
+        jonesFnodes_ludwig[f,:,0,0] = fekoX.fields[f].etheta
+        jonesFnodes_ludwig[f,:,0,1] = fekoX.fields[f].ephi
+        jonesFnodes_ludwig[f,:,1,0] = fekoY.fields[f].etheta
+        jonesFnodes_ludwig[f,:,1,1] = fekoY.fields[f].ephi
+
+    # getting out of the Ludwig-3 basis. Seriously, wtf?
+    # Copied Chuneeta/PolSims/genHealpyBeam.
+    R_phi = np.array([[np.cos(phiF), np.sin(phiF)],[-np.sin(phiF), np.cos(phiF)]]).transpose(2,0,1)
+
+    jonesFnodes = np.einsum('...ab,...bc->...ac', jonesFnodes_ludwig, R_phi)
 
     Rb = np.array([
     [0,0,-1],
@@ -138,7 +144,7 @@ def PAPER_instrument_setup(z0_cza):
     nside_F = 2**5
     npix_F = hp.nside2npix(nside_F)
 
-    h = lambda m: irf.healpixellize(m, thetaF, phiF, nside_F)
+    h = lambda m: irf.healpixellize(m, tb, pb, nside_F)
 
     jones_hpx_b = np.zeros((nfreq,npix_F,2,2), dtype='complex128')
 
@@ -652,6 +658,7 @@ if __name__ == '__main__':
     #print "Note: Horizon mask turned off!"
     #print "Note! Sky rotation turned off"
     #print "Note! time rotation angle is not 360deg"
+    print "Note! Using PAPER instrument"
 
     #########
     # Dimensions and Boundaries
