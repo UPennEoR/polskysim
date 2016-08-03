@@ -3,7 +3,7 @@ import healpy as hp
 import os
 from scipy import interpolate
 import ionRIME_funcs as irf
-
+import sys
 import astropy.coordinates as coord
 import astropy.units as units
 import time
@@ -14,7 +14,7 @@ def Hz2GHz(freq):
     return freq / 1e9
 
 def get_gsm_cube():
-
+    sys.path.append('/data4/paper/ionos/polskysim')
     import gsm2016_mod
 
     nside_in = 64
