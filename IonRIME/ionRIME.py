@@ -21,7 +21,7 @@ def get_gsm_cube():
     npix_in = hp.nside2npix(nside_in)
     I_gal = np.zeros((p.nfreq, npix_in))
     for fi, f in enumerate(p.nu_axis):
-        I_gal[fi] = gsm2016.get_gsm_map_lowres(Hz2GHz(f))
+        I_gal[fi] = gsm2016_mod.get_gsm_map_lowres(Hz2GHz(f))
 
     x_c = np.array([1.,0,0])
     y_c = np.array([0,1.,0])
@@ -244,8 +244,8 @@ def instrument_setup(z0_cza, freqs, restore=False):
     if os.path.exists(local_jones0_file) == True:
         return np.load(local_jones0_file)
 
-    #fbase = '/home/zmarti/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
-    fbase = '/home/zmart/radcos/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
+    fbase = '/data4/paper/ionos/HERA_jones_data/HERA_Jones_healpix_'
+    # fbase = '/home/zmart/radcos/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
 
     nside_in = 2**8
     fnames = [fbase + str(int(f / 1e6)) + 'MHz.txt' for f in freqs]
