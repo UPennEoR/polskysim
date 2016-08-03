@@ -136,7 +136,7 @@ def PAPER_instrument_setup(z0_cza):
     jonesFnodes_b = np.einsum('...ab,...bc->...ac', jonesFnodes, basis_rot)
 
     nside_F = 2**5
-    npix_F = hp.nside2npix(nside_out)
+    npix_F = hp.nside2npix(nside_F)
 
     h = lambda m: irf.healpixellize(m, thetaF, phiF, nside_F)
 
@@ -150,7 +150,9 @@ def PAPER_instrument_setup(z0_cza):
                 jones_hpx_b[f,:,i,j] = Re + 1j*Im
 
     # note that Rb is an involution, Rb = Rb^-1
-    jones = irf.rotate_jones(jones_hpx_b, Rb, multiway=True) # rotate scalar components so instrument is pointed to northpole of healpix coordinate frame
+    jones = np.zeros_like(jones_hpx_b)
+    for i in range(11):
+        jones[i] = irf.rotate_jones(jones_hpx_b[i], Rb, multiway=True) # rotate scalar components so instrument is pointed to northpole of healpix coordinate frame
 
     npix = hp.nside2npix(nside_F)
     hpxidx = np.arange(npix)
@@ -171,8 +173,8 @@ def PAPER_instrument_setup(z0_cza):
     # added some padding. Idea being to allow for some interpolation near the horizon. Questionable.
     npix_out = hp.nside2npix(p.nside)
 
-    Jdata = np.zeros((nfreq_nodes,npix_out,2,2),dtype='complex128')
-    for i,f in enumerate(fnames):
+    Jdata = np.zeros((11,npix_out,2,2),dtype='complex128')
+    for i in range(11):
         J_f = irf.flatten_jones(jones[i]) # J_f.shape = (npix_in, 8)
 
         J_f = J_f * np.tile(hm, 8).reshape(8, npix).transpose(1,0) # Apply horizon mask
@@ -450,31 +452,6 @@ def main(p, restore=False, save=False):
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
         I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
-
-    if False:
-        I = np.ones((p.nfreq,npix))
-        Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
-
-    if False:
-        I = np.zeros((p.nfreq, npix))
-        sc, sa = np.radians([122., 123.]), np.radians([345.,255.])
-        pidx = hp.ang2pix(p.nside, sc, sa)
-        I[:,pidx] = 10. # Jy? meh
-        Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
-
-        I += ( 2. * np.random.random_sample((p.nfreq,npix)) - 1.) * 1e-4
-        I += 1e-2
-
-    if False:
-        I = np.zeros((p.nfreq, npix))
-        sc, sa = np.radians([122.]), np.radians([355.])
-        pidx = hp.ang2pix(p.nside, sc, sa)
-        I[:,pidx] = 10. # Jy? meh
-        Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
-
-        I += ( 2. * np.random.random_sample((p.nfreq,npix)) - 1.) * 1e-4
-        I += 1e-2
-
 
     ## Instrument
     """

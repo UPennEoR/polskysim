@@ -280,3 +280,41 @@ def date_range(day0, ndays):
     day0=str(day0)
 
     # date_strs = ["-".join((year,month,std_day_str(n) for n in range(ndays) ]
+
+def healpixellize(f_in,theta_in,phi_in,nside,fancy=True):
+    """ A dumb method for converting data f sampled at points theta and phi (not on a healpix grid) into a healpix at resolution nside """
+
+    # Input arrays are likely to be rectangular, but this is inconvenient
+    f = f_in.flatten()
+    theta = theta_in.flatten()
+    phi = phi_in.flatten()
+
+    pix = hp.ang2pix(nside,theta,phi)
+
+    map = np.zeros(hp.nside2npix(nside))
+    hits = np.zeros(hp.nside2npix(nside))
+
+    # Simplest gridding is map[pix] = val. This tries to do some
+    #averaging Better would be to do some weighting by distance from
+    #pixel center or something ...
+    if (fancy):
+        for i,v in enumerate(f):
+            # Find the nearest pixels to the pixel in question
+            neighbours,weights = hp.get_interp_weights(nside,theta[i],phi[i])
+            # Add weighted values to map
+            map[neighbours] += v*weights
+            # Keep track of weights
+            hits[neighbours] += weights
+        map = map/hits
+        wh_no_hits = np.where(hits == 0)
+        print 'pixels with no hits',wh_no_hits[0].shape
+#         map[wh_no_hits[0]] = hp.UNSEEN
+        map[wh_no_hits[0]] = 0 # effectively a horizon mask in this case,
+        # since there is no FEKO data below the local horizaon.
+    else:
+        for i,v in enumerate(f):
+            map[pix[i]] += v
+            hits[pix[i]] +=1
+        map = map/hits
+    print 'Healpixellization successful.'
+    return map
