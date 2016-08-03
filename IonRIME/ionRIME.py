@@ -498,7 +498,7 @@ def main(p, restore=False, save=False):
             ijones = np.load('jones_save/PAPER/' + fname)
             print "Restored Jones model"
         else:
-            Jdata = PAPER_instrument_setup(z0_cza, freqs)
+            Jdata = PAPER_instrument_setup(z0_cza)
 
             tmark_inst = time.clock()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
@@ -681,13 +681,13 @@ if __name__ == '__main__':
 
     p = Parameters()
 
-    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**6 # sets the spatial resolution of the simulation, for a given baseline
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 121 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 31 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 720  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 5  # the number of time samples in one rotation of the earch that will be computed
 
     p.ndays = 1 # The number of days that will be simulated.
 

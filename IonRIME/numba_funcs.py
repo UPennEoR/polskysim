@@ -39,17 +39,17 @@ def jones_chain(m1,m2,m3,m4,m5,C):
                         for f in range(2):
                             C[a,f] += m1[a,b] * m2[b,c] * m3[c,d] * m4[d,e] * m5[e,f]
 
-@guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:]',
- '(n,a,b),(n,b,c),(n,c,d),(n,d,e),(n,e,f),(n)->(n,a,f)',nopython=True)
- def _RIME_integral(m1,m2,m3,m4,m5,K,V):
-     for a in range(2):
-         for b in range(2):
-             for c in range(2):
-                 for d in range(2):
-                     for e in range(2):
-                         for f in range(2):
-                             for n in range(K.shape[0]):
-                                 V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * m4[n,d,e] * m5[n,e,f] * K[n]
+@guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:],complex128[:,:]',
+ '(n,a,b),(n,b,c),(n,c,d),(n,d,e),(n,e,f),(n)->(a,f)',nopython=True)
+def _RIME_integral(m1,m2,m3,m4,m5,K,V):
+    for a in range(2):
+        for b in range(2):
+            for c in range(2):
+                for d in range(2):
+                    for e in range(2):
+                        for f in range(2):
+                            for n in range(K.shape[0]):
+                                V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * m4[n,d,e] * m5[n,e,f] * K[n]
 
 @jit(nopython=True)
 def compose_4M(m1,m2,m3,m4,m5,C):
