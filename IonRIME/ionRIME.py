@@ -15,7 +15,7 @@ def Hz2GHz(freq):
 
 def get_gsm_cube():
 
-    import gsm2016
+    import gsm2016_mod
 
     nside_in = 64
     npix_in = hp.nside2npix(nside_in)
