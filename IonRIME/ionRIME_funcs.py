@@ -318,3 +318,144 @@ def healpixellize(f_in,theta_in,phi_in,nside,fancy=True):
         map = map/hits
     print 'Healpixellization successful.'
     return map
+
+def PAPER_instrument_setup(z0_cza):
+    # hack hack hack
+    import sys
+    sys.path.append('PAPER_beams/') # make this whatever it needs to be so that fmt can be imported
+
+    import fmt
+    nu0 = str(int(p.nu_axis[0] / 1e6))
+    nuf = str(int(p.nu_axis[-1] / 1e6))
+    band_str = nu0 + "-" + nuf
+
+    local_jones0_file = 'local_jones0/PAPER/nside' + str(p.nside) + '_band' + band_str + '_Jdata.npy'
+    if os.path.exists(local_jones0_file) == True:
+        return np.load(local_jones0_file)
+
+    fekoX = fmt.FEKO('PAPER_beams/PAPER_FF_X.ffe')
+    fekoY = fmt.FEKO('PAPER_beams/PAPER_FF_Y.ffe')
+
+    thetaF = np.radians(fekoX.fields[0].theta)
+    phiF = np.radians(fekoX.fields[0].phi)
+
+    nfreq = 11
+    npixF = thetaF.shape[0]
+    nthetaF = 91 # don't think these are used
+    nphiF = 73
+
+    jonesFnodes_ludwig = np.zeros((nfreq,npixF,2,2), dtype='complex128')
+    for f in range(nfreq):
+        jonesFnodes_ludwig[f,:,0,0] = fekoX.fields[f].etheta
+        jonesFnodes_ludwig[f,:,0,1] = fekoX.fields[f].ephi
+        jonesFnodes_ludwig[f,:,1,0] = fekoY.fields[f].etheta
+        jonesFnodes_ludwig[f,:,1,1] = fekoY.fields[f].ephi
+
+    # getting out of the Ludwig-3 basis. Seriously, wtf?
+    # Copied Chuneeta/PolSims/genHealpyBeam.
+    R_phi = np.array([[np.cos(phiF), np.sin(phiF)],[-np.sin(phiF), np.cos(phiF)]]).transpose(2,0,1)
+
+    jonesFnodes = np.einsum('...ab,...bc->...ac', jonesFnodes_ludwig, R_phi)
+
+    Rb = np.array([
+    [0,0,-1],
+    [0,-1,0],
+    [-1,0,0]
+    ])
+
+    tb, pb = rotate_sphr_coords(Rb, thetaF, phiF)
+
+    tF_v = t_hat_cart(thetaF, phiF)
+    pF_v = p_hat_cart(thetaF, phiF)
+
+    tb_v = t_hat_cart(tb, pb)
+
+    fRtF_v = np.einsum('ab...,b...->a...', Rb, tF_v)
+    fRpF_v = np.einsum('ab...,b...->a...', Rb, pF_v)
+
+    cosX = np.einsum('a...,a...', fRtF_v, tb_v)
+    sinX = np.einsum('a...,a...', fRpF_v, tb_v)
+
+    basis_rot = np.array([[cosX, sinX],[-sinX, cosX]])
+    basis_rot = np.transpose(basis_rot,(2,0,1))
+
+    jonesFnodes_b = np.einsum('...ab,...bc->...ac', jonesFnodes, basis_rot)
+
+    nside_F = 2**5
+    npix_F = hp.nside2npix(nside_F)
+
+    h = lambda m: healpixellize(m, tb, pb, nside_F)
+
+    jones_hpx_b = np.zeros((nfreq,npix_F,2,2), dtype='complex128')
+
+    for f in range(nfreq):
+        for i in range(2):
+            for j in range(2):
+                Re = h((jonesFnodes_b.real)[f,:,i,j])
+                Im = h((jonesFnodes_b.imag)[f,:,i,j])
+                jones_hpx_b[f,:,i,j] = Re + 1j*Im
+
+    # note that Rb is an involution, Rb = Rb^-1
+    jones = np.zeros_like(jones_hpx_b)
+    for i in range(11):
+        jones[i] = rotate_jones(jones_hpx_b[i], Rb, multiway=True) # rotate scalar components so instrument is pointed to northpole of healpix coordinate frame
+
+    npix = hp.nside2npix(nside_F)
+    hpxidx = np.arange(npix)
+    cza, ra = hp.pix2ang(nside_F, hpxidx)
+
+    z0 = r_hat_cart(z0_cza, 0.)
+
+    RotAxis = np.cross(z0, np.array([0,0,1.]))
+    RotAxis /= np.sqrt(np.dot(RotAxis,RotAxis))
+    RotAngle = np.arccos(np.dot(z0, [0,0,1.]))
+
+    R_z0 = rotation_matrix(RotAxis, RotAngle)
+
+    t0, p0 = rotate_sphr_coords(R_z0, cza, ra)
+
+    hm = np.zeros(npix)
+    hm[np.where(cza < (np.pi / 2. + np.pi / 20.))] = 1 # Horizon mask; is 0 below the local horizon.
+    # added some padding. Idea being to allow for some interpolation near the horizon. Questionable.
+    npix_out = hp.nside2npix(p.nside)
+
+    Jdata = np.zeros((11,npix_out,2,2),dtype='complex128')
+    for i in range(11):
+        J_f = flatten_jones(jones[i]) # J_f.shape = (npix_in, 8)
+
+        J_f = J_f * np.tile(hm, 8).reshape(8, npix).transpose(1,0) # Apply horizon mask
+
+        # Could future "rotation" of these zeroed-maps have small errors at the
+        # edges of the horizon? due to the way healpy interpolates.
+        # Unlikely to be important.
+        # Comment update: Yep, it turns out this happens, BUT it is approximately
+        # power-preserving. The pixels at the edges of the rotated mask are not
+        # identically 1, but the sum over the mask is maintained to about a part
+        # in 1e-5
+
+        # Perform a scalar rotation of each component so that the instrument's boresight
+        # is pointed toward (z0_cza, 0), the location of the instrument on the
+        # earth in the Current-Epoch-RA/Dec coordinate frame.
+        J_f = rotate_jones(J_f, R_z0, multiway=False)
+
+        if p.nside != nside_F:
+            # Change the map resolution as needed.
+
+            #d = lambda m: hp.ud_grade(m, nside=p.nside, power=-2.)
+                # I think these two ended up being (roughly) the same?
+                # The apparent normalization problem was really becuase of an freq. interpolation problem.
+                # irf.harmonic_ud_grade is probably better for increasing resolution, but hp.ud_grade is
+                # faster because it's just averaging/tiling instead of doing SHT's
+            d = lambda m: harmonic_ud_grade(m, nside_F, p.nside)
+            J_f = (np.asarray(map(d, J_f.T))).T
+                # The inner transpose is so that correct dimension is map()'ed over,
+                # and then the outer transpose returns the array to its original shape.
+
+        J_f = inverse_flatten_jones(J_f) # Change shape to (nfreq,npix,2,2), complex-valued
+        J_f = transform_basis(p.nside, J_f, z0_cza, R_z0) # right-multiply by the basis transformation matrix from RA/Dec to the Local CST basis.
+        Jdata[i,:,:,:] = J_f
+
+    if os.path.exists(local_jones0_file) == False:
+        np.save(local_jones0_file, Jdata)
+
+    return Jdata

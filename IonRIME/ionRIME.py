@@ -4,8 +4,6 @@ import os
 from scipy import interpolate
 import ionRIME_funcs as irf
 import sys
-import astropy.coordinates as coord
-import astropy.units as units
 import time
 import numba_funcs as irnf
 import radiono
@@ -16,6 +14,8 @@ def Hz2GHz(freq):
 def get_gsm_cube():
     sys.path.append('/data4/paper/ionos/polskysim')
     import gsm2016_mod
+    import astropy.coordinates as coord
+    import astropy.units as units
 
     nside_in = 64
     npix_in = hp.nside2npix(nside_in)
@@ -90,147 +90,6 @@ def transform_basis(nside, jones, z0_cza, R_z0):
     basis_rot = np.transpose(basis_rot,(2,0,1))
 
     return irnf.M(jones, basis_rot)
-
-def PAPER_instrument_setup(z0_cza):
-    # hack hack hack
-    import sys
-    sys.path.append('PAPER_beams/') # make this whatever it needs to be so that fmt can be imported
-
-    import fmt
-    nu0 = str(int(p.nu_axis[0] / 1e6))
-    nuf = str(int(p.nu_axis[-1] / 1e6))
-    band_str = nu0 + "-" + nuf
-
-    local_jones0_file = 'local_jones0/PAPER/nside' + str(p.nside) + '_band' + band_str + '_Jdata.npy'
-    if os.path.exists(local_jones0_file) == True:
-        return np.load(local_jones0_file)
-
-    fekoX = fmt.FEKO('PAPER_beams/PAPER_FF_X.ffe')
-    fekoY = fmt.FEKO('PAPER_beams/PAPER_FF_Y.ffe')
-
-    thetaF = np.radians(fekoX.fields[0].theta)
-    phiF = np.radians(fekoX.fields[0].phi)
-
-    nfreq = 11
-    npixF = thetaF.shape[0]
-    nthetaF = 91 # don't think these are used
-    nphiF = 73
-
-    jonesFnodes_ludwig = np.zeros((nfreq,npixF,2,2), dtype='complex128')
-    for f in range(nfreq):
-        jonesFnodes_ludwig[f,:,0,0] = fekoX.fields[f].etheta
-        jonesFnodes_ludwig[f,:,0,1] = fekoX.fields[f].ephi
-        jonesFnodes_ludwig[f,:,1,0] = fekoY.fields[f].etheta
-        jonesFnodes_ludwig[f,:,1,1] = fekoY.fields[f].ephi
-
-    # getting out of the Ludwig-3 basis. Seriously, wtf?
-    # Copied Chuneeta/PolSims/genHealpyBeam.
-    R_phi = np.array([[np.cos(phiF), np.sin(phiF)],[-np.sin(phiF), np.cos(phiF)]]).transpose(2,0,1)
-
-    jonesFnodes = np.einsum('...ab,...bc->...ac', jonesFnodes_ludwig, R_phi)
-
-    Rb = np.array([
-    [0,0,-1],
-    [0,-1,0],
-    [-1,0,0]
-    ])
-
-    tb, pb = irf.rotate_sphr_coords(Rb, thetaF, phiF)
-
-    tF_v = irf.t_hat_cart(thetaF, phiF)
-    pF_v = irf.p_hat_cart(thetaF, phiF)
-
-    tb_v = irf.t_hat_cart(tb, pb)
-
-    fRtF_v = np.einsum('ab...,b...->a...', Rb, tF_v)
-    fRpF_v = np.einsum('ab...,b...->a...', Rb, pF_v)
-
-    cosX = np.einsum('a...,a...', fRtF_v, tb_v)
-    sinX = np.einsum('a...,a...', fRpF_v, tb_v)
-
-    basis_rot = np.array([[cosX, sinX],[-sinX, cosX]])
-    basis_rot = np.transpose(basis_rot,(2,0,1))
-
-    jonesFnodes_b = np.einsum('...ab,...bc->...ac', jonesFnodes, basis_rot)
-
-    nside_F = 2**5
-    npix_F = hp.nside2npix(nside_F)
-
-    h = lambda m: irf.healpixellize(m, tb, pb, nside_F)
-
-    jones_hpx_b = np.zeros((nfreq,npix_F,2,2), dtype='complex128')
-
-    for f in range(nfreq):
-        for i in range(2):
-            for j in range(2):
-                Re = h((jonesFnodes_b.real)[f,:,i,j])
-                Im = h((jonesFnodes_b.imag)[f,:,i,j])
-                jones_hpx_b[f,:,i,j] = Re + 1j*Im
-
-    # note that Rb is an involution, Rb = Rb^-1
-    jones = np.zeros_like(jones_hpx_b)
-    for i in range(11):
-        jones[i] = irf.rotate_jones(jones_hpx_b[i], Rb, multiway=True) # rotate scalar components so instrument is pointed to northpole of healpix coordinate frame
-
-    npix = hp.nside2npix(nside_F)
-    hpxidx = np.arange(npix)
-    cza, ra = hp.pix2ang(nside_F, hpxidx)
-
-    z0 = irf.r_hat_cart(z0_cza, 0.)
-
-    RotAxis = np.cross(z0, np.array([0,0,1.]))
-    RotAxis /= np.sqrt(np.dot(RotAxis,RotAxis))
-    RotAngle = np.arccos(np.dot(z0, [0,0,1.]))
-
-    R_z0 = irf.rotation_matrix(RotAxis, RotAngle)
-
-    t0, p0 = irf.rotate_sphr_coords(R_z0, cza, ra)
-
-    hm = np.zeros(npix)
-    hm[np.where(cza < (np.pi / 2. + np.pi / 20.))] = 1 # Horizon mask; is 0 below the local horizon.
-    # added some padding. Idea being to allow for some interpolation near the horizon. Questionable.
-    npix_out = hp.nside2npix(p.nside)
-
-    Jdata = np.zeros((11,npix_out,2,2),dtype='complex128')
-    for i in range(11):
-        J_f = irf.flatten_jones(jones[i]) # J_f.shape = (npix_in, 8)
-
-        J_f = J_f * np.tile(hm, 8).reshape(8, npix).transpose(1,0) # Apply horizon mask
-
-        # Could future "rotation" of these zeroed-maps have small errors at the
-        # edges of the horizon? due to the way healpy interpolates.
-        # Unlikely to be important.
-        # Comment update: Yep, it turns out this happens, BUT it is approximately
-        # power-preserving. The pixels at the edges of the rotated mask are not
-        # identically 1, but the sum over the mask is maintained to about a part
-        # in 1e-5
-
-        # Perform a scalar rotation of each component so that the instrument's boresight
-        # is pointed toward (z0_cza, 0), the location of the instrument on the
-        # earth in the Current-Epoch-RA/Dec coordinate frame.
-        J_f = irf.rotate_jones(J_f, R_z0, multiway=False)
-
-        if p.nside != nside_F:
-            # Change the map resolution as needed.
-
-            #d = lambda m: hp.ud_grade(m, nside=p.nside, power=-2.)
-                # I think these two ended up being (roughly) the same?
-                # The apparent normalization problem was really becuase of an freq. interpolation problem.
-                # irf.harmonic_ud_grade is probably better for increasing resolution, but hp.ud_grade is
-                # faster because it's just averaging/tiling instead of doing SHT's
-            d = lambda m: irf.harmonic_ud_grade(m, nside_F, p.nside)
-            J_f = (np.asarray(map(d, J_f.T))).T
-                # The inner transpose is so that correct dimension is map()'ed over,
-                # and then the outer transpose returns the array to its original shape.
-
-        J_f = irf.inverse_flatten_jones(J_f) # Change shape to (nfreq,npix,2,2), complex-valued
-        J_f = transform_basis(p.nside, J_f, z0_cza, R_z0) # right-multiply by the basis transformation matrix from RA/Dec to the Local CST basis.
-        Jdata[i,:,:,:] = J_f
-
-    if os.path.exists(local_jones0_file) == False:
-        np.save(local_jones0_file, Jdata)
-
-    return Jdata
 
 def instrument_setup(z0_cza, freqs, restore=False):
     """
@@ -350,33 +209,13 @@ def _interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='spline'):
             Jlmj_re = np.real(Jlm_in[:,lm,j])
             Jlmj_im = np.imag(Jlm_in[:,lm,j])
 
-            a = interpolate_pixel(Jlmj_re, freqs, p.nu_axis, interp_type=p.interp_type)
+            a = interpolate_pixel(Jlmj_re, freqs, p.nu_axis, interp_type=p.interp_type) # note! interpolate_pixel function no longer exists
             b = interpolate_pixel(Jlmj_im, freqs, p.nu_axis, interp_type=p.interp_type)
             Jlm_out[:, lm, j] = a + 1j*b
 
     # J_in.shape = (p.nfreq_in, ??, 8)
 
     # Now, return alm's? or spatial maps?
-
-def interpolate_pixel(pi, freqs, interp_type='linear'):
-    """
-    Interpolates pixel along the frequency axis.
-    """
-    # looks like 'hermite' interpolation will take ~6 times as long as linear
-    if interp_type == 'hermite':
-        interpolant = interpolate.PchipInterpolator(freqs, pi)
-
-    elif interp_type == 'spline':
-        interpolant = interpolate.InterpolatedUnivariateSpline(freqs, pi)
-
-    elif interp_type == 'fitspline':
-        interpolant = interpolate.UnivariateSpline(freqs, pi)
-
-    else:
-        interpolant = interpolate.interp1d(freqs, pi) # linear interpolation
-
-    p_out = interpolant(p.nu_axis)
-    return p_out
 
 def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic', save=False):
     #nfreq_out = len(nu_axis)
@@ -391,11 +230,6 @@ def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic', save
         J_in = J_flat
 
     # J_in.shape = (nfreq_in,npix, 8)
-
-    # J_out = np.zeros((p.nfreq,npix,8))
-    # for pi in xrange(npix):
-    #     for i in xrange(8):
-    #         J_out[:,pi,i] = interpolate_pixel(J_in[:, pi, i], freqs, interp_type=interp_type)
 
     interpolant = interpolate.interp1d(freqs, J_in, kind=interp_type,axis=0)
     J_out = interpolant(p.nu_axis)
@@ -449,8 +283,6 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
-
-
 def main(p, restore=False, save=False):
 
     npix = hp.nside2npix(p.nside)
@@ -470,16 +302,6 @@ def main(p, restore=False, save=False):
     if False:
         I = get_gsm_cube()
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
-
-        # if p.unpolarized == True:
-        #     Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
-        # else:
-        #     Cl_I = hp.anafast(I, lmax=p.lmax)
-        #     pfrac = 0.5
-        #
-        #     E_alm = hp.synfast(Cl_I, p.nside)
-        #
-        #     B_alm = hp.synfast(Cl_i, p.nside)
 
     if False:
         I,Q,U,V = get_cora_polsky()
@@ -526,7 +348,6 @@ def main(p, restore=False, save=False):
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
     I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
-    # I_alm, Q_alm, U_alm, V_alm = [map2alm(m, p.lmax) for m in [I,Q,U,V]]
 
     ## Instrument
     """
@@ -550,7 +371,7 @@ def main(p, restore=False, save=False):
             ijones = np.load('jones_save/PAPER/' + fname)
             print "Restored Jones model"
         else:
-            Jdata = PAPER_instrument_setup(z0_cza)
+            Jdata = irf.PAPER_instrument_setup(z0_cza)
 
             tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
@@ -597,6 +418,18 @@ def main(p, restore=False, save=False):
 
     l,m = hp.Alm.getlm(p.lmax)
     for b_i in range(bl_eq.shape[0]):
+        ##
+        """
+        Fringe
+        K.shape = (nfreq,npix)
+        """
+        c = 299792458. # meters / sec
+        b = bl_eq[b_i]# meters, in the Equatorial basis
+        s = hp.pix2vec(p.nside, hpxidx)
+        b_dot_s = np.einsum('a...,a...',b,s)
+        tau = b_dot_s / c
+        K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
+
         for t in range(p.ntime):
             print "t is " + str(t)
             zl_cza = z0_cza
@@ -605,33 +438,6 @@ def main(p, restore=False, save=False):
 
             RotAxis = np.array([0.,0.,1.])
             RotAngle = -zl_ra
-
-            # R_t = irf.rotation_matrix(RotAxis, RotAngle)
-
-            # It = I
-            # Qt = Q
-            # Ut = U
-            # Vt = V
-
-            # It = np.zeros_like(I)
-            # Qt = np.zeros_like(Q)
-            # Ut = np.zeros_like(U)
-            # Vt = np.zeros_like(V)
-            #
-            # for i in range(p.nfreq):
-            #     It[i] = irf.rotate_healpix_mindex(I[i], R_t)
-            #     Qt[i] = irf.rotate_healpix_mindex(Q[i], R_t)
-            #     Ut[i] = irf.rotate_healpix_mindex(U[i], R_t)
-            #     Vt[i] = irf.rotate_healpix_mindex(V[i], R_t)
-
-            # print m.shape[0]
-            # mrot = np.zeros((p.nfreq, m.shape[0]), dtype='complex128')
-            # for i in range(p.nfreq):
-            #     mrot[i,:] = np.exp(1j * m * RotAngle)
-
-            # mrot = np.outer(np.ones(p.nfreq), np.exp(1j * m * RotAngle)) # memory errors, wtf?
-            # mrot = np.tile(np.exp(1j * m * RotAngle), p.nfreq).T.reshape(p.nfreq, m.shape[0])
-            # It, Qt, Ut, Vt = map(lambda alm: alm2map(alm, p.nside), [I_alm * mrot, Q_alm * mrot, U_alm * mrot, V_alm * mrot])
 
             mrot = np.exp(1j * m * RotAngle)
             It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in [I_alm, Q_alm, U_alm, V_alm]]
@@ -666,58 +472,15 @@ def main(p, restore=False, save=False):
             # worried abou this...is the last line producing the right ordering,
             # or is ion_rot unchanged
 
-            ##
-            """
-            K.shape = (nfreq,npix)
-            """
-            c = 299792458. # meters / sec
-            b = bl_eq[b_i]# meters, in the Equatorial basis
-            s = hp.pix2vec(p.nside, hpxidx)
-            b_dot_s = np.einsum('a...,a...',b,s)
-            tau = b_dot_s / c
-            K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
-
             C = np.zeros_like(sky_t)
             irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
 
             irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
 
-            # for nu_i, nu in enumerate(p.nu_axis):
-            #     print "t is " + str(t) + ", nu_i is " + str(nu_i)
-            #
-            #     ## Fringe
-            #     """K.shape = (npix)"""
-            #
-            #     # c = 299792458. # meters / sec
-            #     # b = bl_eq[b_i]# meters, in the Equatorial basis
-            #     # s = hp.pix2vec(p.nside, hpxidx)
-            #     # b_dot_s = np.einsum('a...,a...',b,s)
-            #     # tau = b_dot_s / c
-            #     # K = np.exp(-2. * np.pi * 1j * tau * nu)
-            #
-            #
-            #     # Oleg, eat your heart out
-            #     compose_4M = lambda a,b,c,d,e: M(M(M(M(a,b),c),d),e)
-            #
-            #     C = compose_4M(
-            #         ijones[nu_i],
-            #         ion_rot[nu_i],
-            #         sky_t[nu_i],
-            #         ion_rotT[nu_i],
-            #         ijonesH[nu_i])
-            #
-            #     # could also be:
-            #     # reduce(M, [ijones[nu_i],ion_rot[nu_i]])
-            #
-            #     Vis[b_i,t,nu_i,:,:] = RIME_integral(C, K, Vis[b_i,t,nu_i,:,:].squeeze())
     Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.time()
     print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
     print "Full run in " + str(tmark_loopstop -tmark0) + " seconds."
-    # I think there is a problem with this timer. It apeared to count ~16 hours
-    # in what I KNOW was less than 9 hours because I started the sim before I went to sleep
-    # and it was finished when I woke up. I wonder if it has something to do with the multi-threading
-    # of the alm2map synthesis, so there is more than one core working and ticking.
 
     out_name = "Vis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
     if p.unpolarized == True:
@@ -737,9 +500,6 @@ if __name__ == '__main__':
     #print "Note! Horizon mask is off!"
     print "Note! Ionosphere set to Identity!"
     #print "Note: Horizon mask turned off!"
-    #print "Note! Sky rotation turned off"
-    #print "Note! time rotation angle is not 360deg"
-    #print "Note! Using PAPER instrument"
 
     #########
     # Dimensions and Boundaries
