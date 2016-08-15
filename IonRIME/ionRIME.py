@@ -23,7 +23,7 @@ def get_gsm_cube():
     for fi, f in enumerate(p.nu_axis):
         I_gal[fi] = gsm2016_mod.get_gsm_map_lowres(Hz2GHz(f))
 
-    x_c = np.array([1.,0,0])
+    x_c = np.array([1.,0,0]) # unit vectors to be transformed by astropy
     y_c = np.array([0,1.,0])
     z_c = np.array([0,0,1.])
 
@@ -42,6 +42,17 @@ def get_gsm_cube():
         I[i] = irf.rotate_healpix_map(I[i], R)
 
     return I
+def get_cora_polsky(pfrac_max=None):
+    from cora.foreground import galaxy
+
+    gal = galaxy.ConstrainedGalaxy()
+    gal.nside = p.nside
+    gal.frequencies = p.nu_axis
+
+    stokes_cubes = gal.getpolsky()
+    I,Q,U,V = [stokes_cubes[:,i,:] for i in range(4)]
+
+    return I,Q,U,V
 
 def transform_basis(nside, jones, z0_cza, R_z0):
     """
@@ -438,6 +449,8 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
+
+
 def main(p, restore=False, save=False):
 
     npix = hp.nside2npix(p.nside)
@@ -454,19 +467,66 @@ def main(p, restore=False, save=False):
     """
     #I,Q,U,V = [np.random.rand(p.nfreq,npix) for x in range(4)]
 
-    if True:
+    if False:
         I = get_gsm_cube()
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
-    if False:
-        ## input sky model here!
+        # if p.unpolarized == True:
+        #     Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+        # else:
+        #     Cl_I = hp.anafast(I, lmax=p.lmax)
+        #     pfrac = 0.5
+        #
+        #     E_alm = hp.synfast(Cl_I, p.nside)
+        #
+        #     B_alm = hp.synfast(Cl_i, p.nside)
 
-        I = 0
-        Q = 0
-        U = 0
-        V = 0
+    if False:
+        I,Q,U,V = get_cora_polsky()
+        if p.unpolarized == True:
+            Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+
+    if False:
+        if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
+
+        import h5py
+
+        fpath = '/data4/paper/ionos/cora_maps/cora_polgalaxy1_nside128_nfreq241_band140_170.h5'
+        print 'Using ' + fpath
+        data = h5py.File(fpath)
+        if p.unpolarized == True:
+            I,_,_,_ = [data['map'][:,i,:] for i in [0,1,2,3]]
+            Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+        else:
+            I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
+
+    if False:
+        if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
+
+        import h5py
+
+        fpath = '/data4/paper/ionos/cora_maps/cora_polforeground1_nside128_nfreq241_band140_170.h5'
+        print 'Using ' + fpath
+        data = h5py.File(fpath)
+        if p.unpolarized == True:
+            I,_,_,_ = [data['map'][:,i,:] for i in [0,1,2,3]]
+            Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+        else:
+            I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
+
+    if True:
+        if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
+
+        import h5py
+        fpath = '/data4/paper/ionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5'
+        print 'Using ' + fpath
+        data = h5py.File(fpath)
+
+        I = data['map'][:,0,:]
+        Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
     I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
+    # I_alm, Q_alm, U_alm, V_alm = [map2alm(m, p.lmax) for m in [I,Q,U,V]]
 
     ## Instrument
     """
@@ -476,7 +536,7 @@ def main(p, restore=False, save=False):
     freqs = [x * 1e6 for x in range(140,171)] # Hz
     # freqs = [(100 + 10 * x) * 1e6 for x in range(11)] # Hz. Must be converted to MHz for file list.
     #freqs = [140, 150, 160]
-    tmark0 = time.clock()
+    tmark0 = time.time()
 
     nu0 = str(int(p.nu_axis[0] / 1e6))
     nuf = str(int(p.nu_axis[-1] / 1e6))
@@ -492,14 +552,14 @@ def main(p, restore=False, save=False):
         else:
             Jdata = PAPER_instrument_setup(z0_cza)
 
-            tmark_inst = time.clock()
+            tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
 
             ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type, save=save)
 
             ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type, save=save)
 
-            tmark_interp = time.clock()
+            tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
     else:
         if os.path.exists('jones_save/' + fname) == True:
@@ -508,12 +568,12 @@ def main(p, restore=False, save=False):
         else:
             Jdata = instrument_setup(z0_cza, freqs, restore=restore)
 
-            tmark_inst = time.clock()
+            tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
 
             ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type, save=save)
 
-            tmark_interp = time.clock()
+            tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
 
     ijonesH = np.transpose(ijones.conj(),(0,1,3,2))
@@ -529,12 +589,13 @@ def main(p, restore=False, save=False):
     Vis = np.zeros(p.nbaseline * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
     Vis = Vis.reshape(p.nbaseline, p.ntime, p.nfreq, 2, 2)
 
-    tmark_loopstart = time.clock()
+    tmark_loopstart = time.time()
 
     if debug == True:
         source_index = np.zeros(p.ntime)
         beam_track = np.zeros(npix)
 
+    l,m = hp.Alm.getlm(p.lmax)
     for b_i in range(bl_eq.shape[0]):
         for t in range(p.ntime):
             print "t is " + str(t)
@@ -544,7 +605,8 @@ def main(p, restore=False, save=False):
 
             RotAxis = np.array([0.,0.,1.])
             RotAngle = -zl_ra
-            R_t = irf.rotation_matrix(RotAxis, RotAngle)
+
+            # R_t = irf.rotation_matrix(RotAxis, RotAngle)
 
             # It = I
             # Qt = Q
@@ -562,8 +624,17 @@ def main(p, restore=False, save=False):
             #     Ut[i] = irf.rotate_healpix_mindex(U[i], R_t)
             #     Vt[i] = irf.rotate_healpix_mindex(V[i], R_t)
 
-            mrot = np.outer(np.ones(p.nfreq), np.exp(1j * m * RotAngle))
-            It, Qt, Ut, Vt = map(lambda alm: alm2map(alm, p.nside), [I_alm * mrot, Q_alm * mrot, U_alm * mrot, V_alm * mrot])
+            # print m.shape[0]
+            # mrot = np.zeros((p.nfreq, m.shape[0]), dtype='complex128')
+            # for i in range(p.nfreq):
+            #     mrot[i,:] = np.exp(1j * m * RotAngle)
+
+            # mrot = np.outer(np.ones(p.nfreq), np.exp(1j * m * RotAngle)) # memory errors, wtf?
+            # mrot = np.tile(np.exp(1j * m * RotAngle), p.nfreq).T.reshape(p.nfreq, m.shape[0])
+            # It, Qt, Ut, Vt = map(lambda alm: alm2map(alm, p.nside), [I_alm * mrot, Q_alm * mrot, U_alm * mrot, V_alm * mrot])
+
+            mrot = np.exp(1j * m * RotAngle)
+            It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in [I_alm, Q_alm, U_alm, V_alm]]
 
             sky_t = np.array([
                 [It + Qt, Ut - 1j*Vt],
@@ -640,7 +711,7 @@ def main(p, restore=False, save=False):
             #
             #     Vis[b_i,t,nu_i,:,:] = RIME_integral(C, K, Vis[b_i,t,nu_i,:,:].squeeze())
     Vis /= hp.nside2npix(p.nside) # normalization
-    tmark_loopstop = time.clock()
+    tmark_loopstop = time.time()
     print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
     print "Full run in " + str(tmark_loopstop -tmark0) + " seconds."
     # I think there is a problem with this timer. It apeared to count ~16 hours
@@ -649,6 +720,8 @@ def main(p, restore=False, save=False):
     # of the alm2map synthesis, so there is more than one core working and ticking.
 
     out_name = "Vis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
+    if p.unpolarized == True:
+        out_name = "unpol" + out_name
 
     #if os.path.exists(out_name) == False:
     np.savez('output_vis/' + out_name, Vis=Vis, baselines=p.baselines)
@@ -673,13 +746,13 @@ if __name__ == '__main__':
 
     p = Parameters()
 
-    p.nside = 2**6 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 31 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 5  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 288  # the number of time samples in one rotation of the earch that will be computed
 
     p.ndays = 1 # The number of days that will be simulated.
 
@@ -700,6 +773,8 @@ if __name__ == '__main__':
 
     p.PAPER_instrument = False # hack hack hack
 
+    p.unpolarized = True
+
     ## OLD OPTIONS
     #   'linear' : linear interpolation between nodes
     #   'hermite': Piecewise Cubic Hermite Interpolating Polynomials between each
@@ -710,7 +785,10 @@ if __name__ == '__main__':
     #   'spline': interpolating cubic spline
 
     global debug
-    debug = True
+    debug = False
+
+    if p.unpolarized == True:
+        print "Polarization turned off"
 
     main(p, restore=False,save=True)
     print "Compiled successfully"
