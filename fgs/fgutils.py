@@ -109,6 +109,7 @@ def mk_fg_cube(onescale=True, pfrac=0.002, flo=100., fhi=200., nbins=203, alo=-2
         alpha = np.random.uniform(low=alo,high=ahi,size=npix)
         alpha = hp.smoothing(alpha,fwhm=np.radians(3.))
         if intermediates:
+            #XXX bug -- need to init date
             np.savez('alpha_%i-%i-%i.npz'%(date[0],date[1],date[2]),maps=alpha)
     else:
         if verbose: '    Loading %s'%alpha_map
@@ -129,6 +130,7 @@ def mk_fg_cube(onescale=True, pfrac=0.002, flo=100., fhi=200., nbins=203, alo=-2
             #XXX as above wrt pol angle, but also this currently assumes we are dominated by Galactic Synchrotron
     
         _Q0,_U0 = Q0 - Q0.min(),U0 - U0.min()
+        #XXX is this OK?
         Q0 = (2*_Q0/_Q0.max()) - 1 #scale to be -1 to 1 
         U0 = (2*_U0/_U0.max()) - 1 #scale to be -1 to 1
     
@@ -156,6 +158,7 @@ def mk_fg_cube(onescale=True, pfrac=0.002, flo=100., fhi=200., nbins=203, alo=-2
     
     if verbose: print 'Frequency scaling done'
     
+    #XXX is this OK?
     #impose polarization fraction as fraction of sky-average Stokes I power per frequency
     Qmaps *= np.nanmean(I,axis=0)*pfrac
     Umaps *= np.nanmean(I,axis=0)*pfrac
