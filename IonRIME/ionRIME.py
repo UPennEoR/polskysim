@@ -283,57 +283,6 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
-def compute_vis(t, p, m, sky_list, ijones, ijonesH, K, Vis, b_i):
-    print "t is " + str(t)
-    total_angle = 360. # degrees
-    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
-
-    npix = hp.nside2npix(p.nside)
-
-    RotAxis = np.array([0.,0.,1.])
-    RotAngle = -zl_ra
-
-    mrot = np.exp(1j * m * RotAngle)
-    It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in sky_list]
-
-    sky_t = np.array([
-        [It + Qt, Ut - 1j*Vt],
-        [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
-        # Could do this iteratively! Define the differential rotation
-        # and apply it in-place to the same sky tensor at each step of the time loop.
-    #ijones_t = irf.rotate_jones(ijones, R_t, multiway=True)
-
-    # if debug == True:
-    #     source_index[t] = np.argmax(It[int(p.nfreq / 2),:])
-    #     Bt = irf.rotate_healpix_map(abs(ijones[int(p.nfreq/2),:,0,0])**2. + abs(ijones[int(p.nfreq/2),:,0,1])**2., R_t.T)
-    #     beam_track += Bt / float(p.ntime)
-
-
-
-    ## Ionosphere
-    """
-    ionrot.shape = (p.nfreq,npix 2,2)
-    """
-
-    # RMangle = get_rm_map()
-    # ion_cos = np.cos(RMangle)
-    # ion_sin = np.sin(RMangle)
-    ion_cos = np.ones((p.nfreq, npix))
-    ion_sin = np.zeros((p.nfreq, npix))
-    ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
-    ion_rot = np.transpose(ion_rot,(2,3,0,1))
-    ion_rotT = np.transpose(ion_rot,(0,1,3,2))
-    # worried abou this...is the last line producing the right ordering,
-    # or is ion_rot unchanged
-
-    C = np.zeros_like(sky_t)
-    irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
-
-    irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
-
-def visibility_t(t):
-    return compute_vis(t, p, m, sky_list, ijones, ijonesH, K, Vis, b_i)
-
 def main(p, save=False):
 
     npix = hp.nside2npix(p.nside)
@@ -459,11 +408,11 @@ def main(p, save=False):
     Vis = np.zeros(p.nbaseline * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
     Vis = Vis.reshape(p.nbaseline, p.ntime, p.nfreq, 2, 2)
 
-    tmark_loopstart = time.time()
-
     l,m = hp.Alm.getlm(p.lmax)
     sky_list = [I_alm, Q_alm, U_alm, V_alm]
     # sky_list = [I,Q,U,V]
+
+    tmark_loopstart = time.time()
 
     for b_i in range(bl_eq.shape[0]):
         ##
