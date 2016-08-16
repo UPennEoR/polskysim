@@ -12,7 +12,7 @@ def Hz2GHz(freq):
     return freq / 1e9
 
 def get_gsm_cube():
-    sys.path.append('/data4/paper/ionos/polskysim')
+    sys.path.append('/data4/paper/zionos/polskysim')
     import gsm2016_mod
     import astropy.coordinates as coord
     import astropy.units as units
@@ -91,7 +91,7 @@ def transform_basis(nside, jones, z0_cza, R_z0):
 
     return irnf.M(jones, basis_rot)
 
-def instrument_setup(z0_cza, freqs, restore=False):
+def instrument_setup(z0_cza, freqs):
     """
     This is the CST simulation using the efield basis of z' = -x, y' = -y, x' = -z
     frequencies are every 10MHz, from 100-200
@@ -114,7 +114,7 @@ def instrument_setup(z0_cza, freqs, restore=False):
     if os.path.exists(local_jones0_file) == True:
         return np.load(local_jones0_file)
 
-    fbase = '/data4/paper/ionos/HERA_jones_data/HERA_Jones_healpix_'
+    fbase = '/data4/paper/zionos/HERA_jones_data/HERA_Jones_healpix_'
     # fbase = '/home/zmart/radcos/polskysim/IonRIME/HERA_jones_data/HERA_Jones_healpix_'
 
     nside_in = 2**8
@@ -283,7 +283,54 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
-def main(p, restore=False, save=False):
+def visibility_t(t):
+    print "t is " + str(t)
+    zl_cza = z0_cza
+    total_angle = 360. # degrees
+    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
+
+    RotAxis = np.array([0.,0.,1.])
+    RotAngle = -zl_ra
+
+    mrot = np.exp(1j * m * RotAngle)
+    It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in [I_alm, Q_alm, U_alm, V_alm]]
+
+    sky_t = np.array([
+        [It + Qt, Ut - 1j*Vt],
+        [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
+        # Could do this iteratively! Define the differential rotation
+        # and apply it in-place to the same sky tensor at each step of the time loop.
+    #ijones_t = irf.rotate_jones(ijones, R_t, multiway=True)
+
+    if debug == True:
+        source_index[t] = np.argmax(It[int(p.nfreq / 2),:])
+        Bt = irf.rotate_healpix_map(abs(ijones[int(p.nfreq/2),:,0,0])**2. + abs(ijones[int(p.nfreq/2),:,0,1])**2., R_t.T)
+        beam_track += Bt / float(p.ntime)
+
+
+
+    ## Ionosphere
+    """
+    ionrot.shape = (p.nfreq,npix 2,2)
+    """
+
+    # RMangle = get_rm_map()
+    # ion_cos = np.cos(RMangle)
+    # ion_sin = np.sin(RMangle)
+    ion_cos = np.ones((p.nfreq, npix))
+    ion_sin = np.zeros((p.nfreq, npix))
+    ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
+    ion_rot = np.transpose(ion_rot,(2,3,0,1))
+    ion_rotT = np.transpose(ion_rot,(0,1,3,2))
+    # worried abou this...is the last line producing the right ordering,
+    # or is ion_rot unchanged
+
+    C = np.zeros_like(sky_t)
+    irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
+
+    irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
+
+def main(p, save=False):
 
     npix = hp.nside2npix(p.nside)
     hpxidx = np.arange(npix)
@@ -313,7 +360,7 @@ def main(p, restore=False, save=False):
 
         import h5py
 
-        fpath = '/data4/paper/ionos/cora_maps/cora_polgalaxy1_nside128_nfreq241_band140_170.h5'
+        fpath = '/data4/paper/zionos/cora_maps/cora_polgalaxy1_nside128_nfreq241_band140_170.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if p.unpolarized == True:
@@ -327,7 +374,7 @@ def main(p, restore=False, save=False):
 
         import h5py
 
-        fpath = '/data4/paper/ionos/cora_maps/cora_polforeground1_nside128_nfreq241_band140_170.h5'
+        fpath = '/data4/paper/zionos/cora_maps/cora_polforeground1_nside128_nfreq241_band140_170.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if p.unpolarized == True:
@@ -340,7 +387,7 @@ def main(p, restore=False, save=False):
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-        fpath = '/data4/paper/ionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5'
+        fpath = '/data4/paper/zionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
 
@@ -378,8 +425,6 @@ def main(p, restore=False, save=False):
 
             ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type, save=save)
 
-            ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type, save=save)
-
             tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
     else:
@@ -387,7 +432,7 @@ def main(p, restore=False, save=False):
             ijones = np.load('jones_save/' + fname)
             print "Restored Jones model"
         else:
-            Jdata = instrument_setup(z0_cza, freqs, restore=restore)
+            Jdata = instrument_setup(z0_cza, freqs)
 
             tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
@@ -430,52 +475,12 @@ def main(p, restore=False, save=False):
         tau = b_dot_s / c
         K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
 
-        for t in range(p.ntime):
-            print "t is " + str(t)
-            zl_cza = z0_cza
-            total_angle = 360. # degrees
-            zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
-
-            RotAxis = np.array([0.,0.,1.])
-            RotAngle = -zl_ra
-
-            mrot = np.exp(1j * m * RotAngle)
-            It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in [I_alm, Q_alm, U_alm, V_alm]]
-
-            sky_t = np.array([
-                [It + Qt, Ut - 1j*Vt],
-                [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
-                # Could do this iteratively! Define the differential rotation
-                # and apply it in-place to the same sky tensor at each step of the time loop.
-            #ijones_t = irf.rotate_jones(ijones, R_t, multiway=True)
-
-            if debug == True:
-                source_index[t] = np.argmax(It[int(p.nfreq / 2),:])
-                Bt = irf.rotate_healpix_map(abs(ijones[int(p.nfreq/2),:,0,0])**2. + abs(ijones[int(p.nfreq/2),:,0,1])**2., R_t.T)
-                beam_track += Bt / float(p.ntime)
-
-
-
-            ## Ionosphere
-            """
-            ionrot.shape = (p.nfreq,npix 2,2)
-            """
-
-            # RMangle = get_rm_map()
-            # ion_cos = np.cos(RMangle)
-            # ion_sin = np.sin(RMangle)
-            ion_cos = np.ones((p.nfreq, npix))
-            ion_sin = np.zeros((p.nfreq, npix))
-            ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
-            ion_rot = np.transpose(ion_rot,(2,3,0,1))
-            ion_rotT = np.transpose(ion_rot,(0,1,3,2))
-            # worried abou this...is the last line producing the right ordering,
-            # or is ion_rot unchanged
-
-            C = np.zeros_like(sky_t)
-            irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
-
-            irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
+        # for t in range(p.ntime):
+        #     visibility_t(t)
+        time_points = range(p.ntime)
+        from multiproccessing import Pool
+        pool = Pool(processes=4)
+        pool.map(visibility_t, time_points)
 
     Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.time()
@@ -550,5 +555,5 @@ if __name__ == '__main__':
     if p.unpolarized == True:
         print "Polarization turned off"
 
-    main(p, restore=False,save=True)
+    main(p,save=True)
     print "Compiled successfully"
