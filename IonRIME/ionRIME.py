@@ -283,17 +283,18 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
-def visibility_t(t):
+def compute_vis(t, p, m, sky_list, ijones, ijonesH, K, Vis, b_i):
     print "t is " + str(t)
-    zl_cza = z0_cza
     total_angle = 360. # degrees
     zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
+
+    npix = hp.nside2npix(p.nside)
 
     RotAxis = np.array([0.,0.,1.])
     RotAngle = -zl_ra
 
     mrot = np.exp(1j * m * RotAngle)
-    It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in [I_alm, Q_alm, U_alm, V_alm]]
+    It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in sky_list]
 
     sky_t = np.array([
         [It + Qt, Ut - 1j*Vt],
@@ -302,10 +303,10 @@ def visibility_t(t):
         # and apply it in-place to the same sky tensor at each step of the time loop.
     #ijones_t = irf.rotate_jones(ijones, R_t, multiway=True)
 
-    if debug == True:
-        source_index[t] = np.argmax(It[int(p.nfreq / 2),:])
-        Bt = irf.rotate_healpix_map(abs(ijones[int(p.nfreq/2),:,0,0])**2. + abs(ijones[int(p.nfreq/2),:,0,1])**2., R_t.T)
-        beam_track += Bt / float(p.ntime)
+    # if debug == True:
+    #     source_index[t] = np.argmax(It[int(p.nfreq / 2),:])
+    #     Bt = irf.rotate_healpix_map(abs(ijones[int(p.nfreq/2),:,0,0])**2. + abs(ijones[int(p.nfreq/2),:,0,1])**2., R_t.T)
+    #     beam_track += Bt / float(p.ntime)
 
 
 
@@ -329,6 +330,9 @@ def visibility_t(t):
     irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
 
     irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
+
+def visibility_t(t):
+    return compute_vis(t, p, m, sky_list, ijones, ijonesH, K, Vis, b_i)
 
 def main(p, save=False):
 
@@ -355,7 +359,7 @@ def main(p, save=False):
         if p.unpolarized == True:
             Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
-    if False:
+    if True:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -383,7 +387,7 @@ def main(p, save=False):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
-    if True:
+    if False:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -457,11 +461,10 @@ def main(p, save=False):
 
     tmark_loopstart = time.time()
 
-    if debug == True:
-        source_index = np.zeros(p.ntime)
-        beam_track = np.zeros(npix)
-
     l,m = hp.Alm.getlm(p.lmax)
+    sky_list = [I_alm, Q_alm, U_alm, V_alm]
+    # sky_list = [I,Q,U,V]
+
     for b_i in range(bl_eq.shape[0]):
         ##
         """
@@ -475,12 +478,48 @@ def main(p, save=False):
         tau = b_dot_s / c
         K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
 
-        # for t in range(p.ntime):
-        #     visibility_t(t)
-        time_points = range(p.ntime)
-        from multiproccessing import Pool
-        pool = Pool(processes=4)
-        pool.map(visibility_t, time_points)
+        for t in range(p.ntime):
+            print "t is " + str(t)
+            total_angle = 360. # degrees
+            zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
+
+            npix = hp.nside2npix(p.nside)
+
+            RotAxis = np.array([0.,0.,1.])
+            RotAngle = -zl_ra
+
+            mrot = np.exp(1j * m * RotAngle)
+            It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in sky_list]
+
+            sky_t = np.array([
+                [It + Qt, Ut - 1j*Vt],
+                [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
+                # Could do this iteratively! Define the differential rotation
+                # and apply it in-place to the same sky tensor at each step of the time loop.
+
+            ## Ionosphere
+            """
+            ionrot.shape = (p.nfreq,npix 2,2)
+            """
+
+            # RMangle = get_rm_map()
+            # ion_cos = np.cos(RMangle)
+            # ion_sin = np.sin(RMangle)
+            ion_cos = np.ones((p.nfreq, npix))
+            ion_sin = np.zeros((p.nfreq, npix))
+            ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
+            ion_rot = np.transpose(ion_rot,(2,3,0,1))
+            ion_rotT = np.transpose(ion_rot,(0,1,3,2))
+            # worried abou this...is the last line producing the right ordering,
+            # or is ion_rot unchanged
+
+            C = np.zeros_like(sky_t)
+            # irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C) # slower!
+            irnf.jones_chain(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
+
+            irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
+
+            # irnf._RIME_integral(ijones, ion_rot, sky_t, ion_rotT, ijonesH, K, Vis[b_i,t,:,:,:].squeeze())
 
     Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.time()
@@ -493,10 +532,6 @@ def main(p, save=False):
 
     #if os.path.exists(out_name) == False:
     np.savez('output_vis/' + out_name, Vis=Vis, baselines=p.baselines)
-    if debug == True:
-        np.savez('debug/source_index.npz', source_index=source_index)
-        np.savez('debug/beam_track.npz', beam_track=beam_track)
-
 
 class Parameters:
     pass
@@ -509,6 +544,7 @@ if __name__ == '__main__':
     #########
     # Dimensions and Boundaries
 
+    global p
     p = Parameters()
 
     p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
