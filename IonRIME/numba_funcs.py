@@ -2,6 +2,19 @@ from numba import jit
 from numba import guvectorize
 import numpy as np
 
+@guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:],complex128[:,:]',
+ '(n,a,b),(n,b,c),(n,c,d),(n,d,e),(n,e,f),(n)->(a,f)',nopython=True, target='parallel')
+def RIME_integral(m1,m2,m3,m4,m5,K,V):
+    for n in range(K.shape[0]):
+        for a in range(2):
+            for b in range(2):
+                for c in range(2):
+                    for d in range(2):
+                        for e in range(2):
+                            for f in range(2):
+                                V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * m4[n,d,e] * m5[n,e,f] * K[n]
+
+
 @jit(nopython=True)
 def M(m1,m2):
     """
@@ -28,28 +41,28 @@ def _M(m1,m2,m_out):
             for k in range(2):
                 m_out[i,k] += m1[i,j] * m2[j,k]
 
+# @guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:]',
+#  '(n,a,b),(n,b,c),(n,c,d),(n,d,e),(n,e,f)->(n,a,f)', nopython=True, target='parallel')
+# def jones_chain(m1,m2,m3,m4,m5,C):
+#     for a in range(2):
+#         for b in range(2):
+#             for c in range(2):
+#                 for d in range(2):
+#                     for e in range(2):
+#                         for f in range(2):
+#                             C[a,f] += m1[a,b] * m2[b,c] * m3[c,d] * m4[d,e] * m5[e,f]
+# Need this version to loop over pixels? might have a bunch of zeros in C
 @guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:]',
  '(n,a,b),(n,b,c),(n,c,d),(n,d,e),(n,e,f)->(n,a,f)', nopython=True, target='parallel')
 def jones_chain(m1,m2,m3,m4,m5,C):
-    for a in range(2):
-        for b in range(2):
-            for c in range(2):
-                for d in range(2):
-                    for e in range(2):
-                        for f in range(2):
-                            C[a,f] += m1[a,b] * m2[b,c] * m3[c,d] * m4[d,e] * m5[e,f]
-
-@guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:],complex128[:,:]',
- '(n,a,b),(n,b,c),(n,c,d),(n,d,e),(n,e,f),(n)->(a,f)',nopython=True, target='parallel')
-def _RIME_integral(m1,m2,m3,m4,m5,K,V):
-    for n in range(K.shape[0]):
+    for n in range(C.shape[0]):
         for a in range(2):
             for b in range(2):
                 for c in range(2):
                     for d in range(2):
                         for e in range(2):
                             for f in range(2):
-                                V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * m4[n,d,e] * m5[n,e,f] * K[n]
+                                C[n,a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * m4[n,d,e] * m5[n,e,f]
 
 @jit(nopython=True)
 def compose_4M(m1,m2,m3,m4,m5,C):
@@ -58,7 +71,7 @@ def compose_4M(m1,m2,m3,m4,m5,C):
 
 @guvectorize('complex128[:,:,:],complex128[:], complex128[:,:]', '(n, i, j),(n)->(i,j)',
  nopython=True, target='parallel')
-def RIME_integral(C, K, V):
+def _RIME_integral(C, K, V):
     """
     C.shape = (npix, 2, 2)
     K.shape = (npix,)

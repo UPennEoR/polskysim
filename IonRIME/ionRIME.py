@@ -462,13 +462,11 @@ def main(p, save=False):
             # worried abou this...is the last line producing the right ordering,
             # or is ion_rot unchanged
 
-            C = np.zeros_like(sky_t)
-            # irnf.compose_4M(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C) # slower!
-            irnf.jones_chain(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
+            # C = np.zeros_like(sky_t)
+            # irnf.jones_chain(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
+            # irnf._RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
 
-            irnf.RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
-
-            # irnf._RIME_integral(ijones, ion_rot, sky_t, ion_rotT, ijonesH, K, Vis[b_i,t,:,:,:].squeeze())
+            irnf.RIME_integral(ijones, ion_rot, sky_t, ion_rotT, ijonesH, K, Vis[b_i,t,:,:,:].squeeze())
 
     Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.time()
