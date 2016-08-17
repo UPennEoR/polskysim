@@ -38,8 +38,8 @@ def get_gsm_cube():
     I = np.zeros((p.nfreq, npix_out))
 
     for i in range(p.nfreq):
-        I[i] = irf.harmonic_ud_grade(I_gal[i], nside_in, p.nside)
-        I[i] = irf.rotate_healpix_map(I[i], R)
+        I[i] = irf.rotate_healpix_map(I_gal[i], R)
+        I[i] = irf.harmonic_ud_grade(I[i], nside_in, p.nside)
 
     return I
 def get_cora_polsky(pfrac_max=None):
@@ -290,7 +290,7 @@ def main(p, save=False):
     cza, ra = hp.pix2ang(p.nside, hpxidx)
     l,m = hp.Alm.getlm(p.lmax)
 
-    z0_cza = np.radians(120.7215)
+    z0_cza = np.radians(120.7215) # latitude of HERA/PAPER
     z0_ra = np.radians(0.)
 
     ## sky
