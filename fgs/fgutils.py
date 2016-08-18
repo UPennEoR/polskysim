@@ -233,7 +233,7 @@ def mk_fg_cube(onescale=True, pfrac=0.002, flo=100., fhi=200., nbins=203, alo=-2
     spols = ['I','Q','U','V']
     cube = [I,Qmaps,Umaps,Vmaps]
     for i,m in enumerate(cube):
-        N = 'cube_%s_%s-%sMHz.npz'%(spols[i],str(flo),str(fhi))
+        N = 'cube_%s_%s-%sMHz_%sbins.npz'%(spols[i],str(flo),str(fhi), str(len(nu)))
         print '    Saving %s'%N
         np.savez(N, maps=m)
 
