@@ -14,6 +14,22 @@ def RIME_integral(m1,m2,m3,m4,m5,K,V):
                             for f in range(2):
                                 V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * m4[n,d,e] * m5[n,e,f] * K[n]
 
+@guvectorize('float64[:],float64[:],float64[:],float64[:],complex128[:]',
+ '(n),(n),(n),(n)->(n)', nopython=True, target='parallel')
+def spinor_rotation(q,u,cos,sin,qun):
+    qun = (q + 1j*u) * (cos + 1j*sin)
+
+
+@guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:],complex128[:,:]',
+ '(n,a,b),(n,b,c),(n,c,d),(n)->(a,d)',nopython=True, target='parallel')
+def instrRIME_integral(m1,m2,m3,m4,m5,K,V):
+    for n in range(K.shape[0]):
+        for a in range(2):
+            for b in range(2):
+                for c in range(2):
+                    for d in range(2):
+                        V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * K[n]
+
 
 @jit(nopython=True)
 def M(m1,m2):

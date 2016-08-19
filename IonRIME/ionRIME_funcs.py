@@ -1,9 +1,7 @@
 import numpy as np
 import math
 import healpy as hp
-
-from radiono import std_hour
-from radiono import physics as phys, interp as itp, ionex_file as inx
+from datetime import datetime
 
 def rotate_sphr_coords(R, theta, phi):
     """
@@ -318,6 +316,14 @@ def healpixellize(f_in,theta_in,phi_in,nside,fancy=True):
         map = map/hits
     print 'Healpixellization successful.'
     return map
+
+def get_time_string(d, day0):
+    date0 = datetime(*day0)
+    one_day = datetime(1,1,2) - datetime(1,1,1)
+
+    date = str(date0 + d * one_day).split(' ')[0]
+    time_str = date + 'T00:00:00'
+    return time_str
 
 def PAPER_instrument_setup(z0_cza):
     # hack hack hack

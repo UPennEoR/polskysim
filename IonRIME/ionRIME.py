@@ -42,6 +42,7 @@ def get_gsm_cube():
         I[i] = irf.harmonic_ud_grade(I[i], nside_in, p.nside)
 
     return I
+
 def get_cora_polsky(pfrac_max=None):
     from cora.foreground import galaxy
 
@@ -217,7 +218,7 @@ def _interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='spline'):
 
     # Now, return alm's? or spatial maps?
 
-def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic', save=False):
+def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic'):
     #nfreq_out = len(nu_axis)
     nfreq_in = len(freqs)
     npix = len(J_in[0,:,0])
@@ -261,14 +262,14 @@ def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic', save
     #
     # J_out[:,:,1,:] /= By_max[:,None,None]
 
-    if save == True:
-        nu0 = str(int(p.nu_axis[0] / 1e6))
-        nuf = str(int(p.nu_axis[-1] / 1e6))
-        fname = p.interp_type + "_" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
-        if p.PAPER_instrument == True:
-            np.save('jones_save/PAPER/' + fname, J_out)
-        else:
-            np.save('jones_save/' + fname, J_out)
+    nu0 = str(int(p.nu_axis[0] / 1e6))
+    nuf = str(int(p.nu_axis[-1] / 1e6))
+    fname = p.interp_type + "_" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
+    if p.PAPER_instrument == True:
+        np.save('jones_save/PAPER/' + fname, J_out)
+    else:
+        np.save('jones_save/' + fname, J_out)
+
     return J_out
 
 def map2alm(marr, lmax):
@@ -283,7 +284,7 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
-def main(p, save=False):
+def main(p):
 
     npix = hp.nside2npix(p.nside)
     hpxidx = np.arange(npix)
@@ -376,7 +377,7 @@ def main(p, save=False):
             tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
 
-            ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type, save=save)
+            ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type)
 
             tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
@@ -390,7 +391,7 @@ def main(p, save=False):
             tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
 
-            ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type, save=save)
+            ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type)
 
             tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
@@ -405,8 +406,8 @@ def main(p, save=False):
     # V[t,f,0,1] == V_xy[t,f]
     # V[t,f,1,0] == V_yx[t,f]
     # V[t,f,1,1] == V_yy[t,f]
-    Vis = np.zeros(p.nbaseline * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
-    Vis = Vis.reshape(p.nbaseline, p.ntime, p.nfreq, 2, 2)
+    Vis = np.zeros(p.ndays, p.ntime * p.nfreq * 2 * 2, dtype='complex128')
+    Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
 
     l,m = hp.Alm.getlm(p.lmax)
     sky_list = [I_alm, Q_alm, U_alm, V_alm]
@@ -414,31 +415,56 @@ def main(p, save=False):
 
     tmark_loopstart = time.time()
 
-    for b_i in range(bl_eq.shape[0]):
-        ##
-        """
-        Fringe
-        K.shape = (nfreq,npix)
-        """
-        c = 299792458. # meters / sec
-        b = bl_eq[b_i]# meters, in the Equatorial basis
-        s = hp.pix2vec(p.nside, hpxidx)
-        b_dot_s = np.einsum('a...,a...',b,s)
-        tau = b_dot_s / c
-        K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
+    ##
+    """
+    Fringe
+    K.shape = (nfreq,npix)
+    """
+    c = 299792458. # meters / sec
+    b = bl_eq[0]# meters, in the Equatorial basis
+    s = hp.pix2vec(p.nside, hpxidx)
+    b_dot_s = np.einsum('a...,a...',b,s)
+    tau = b_dot_s / c
+    K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
+
+
+    for d in range(p.ndays):
+
+        time_str = [get_day_string(d, p.day0)]
+        print "d is " + str(t) + ", day is " time_str[0]
+        ionRM = radiono.rm.HERA_RM(time_str).RMs[0]
+        # ionRM = np.roll(ionRM, -2, axis=0) # local time is UTC+2. But wait, doesn't astropy know this? fuck
 
         for t in range(p.ntime):
             print "t is " + str(t)
-            total_angle = 360. # degrees
-            zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle)
+            total_angle = float(p.hours * 15) # degrees
+            offset_angle = float(p.hour_offset * 15) # degrees
+            zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) # radians
 
             npix = hp.nside2npix(p.nside)
 
             RotAxis = np.array([0.,0.,1.])
-            RotAngle = -zl_ra
+            RotAngle = -zl_ra # basicly Hour Angle with t=0
 
             mrot = np.exp(1j * m * RotAngle)
             It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in sky_list]
+
+            ## Ionosphere
+            """
+            ionrot.shape = (p.nfreq,npix 2,2)
+            """
+            if p.ionosphere = True:
+                hour_ind = int(t * p.hours / p.ntime) + p.hour_offset
+                ionRM_t = ionRM[hour_ind] # pick out the map corresponding to this hour
+                lbda2 = (c / p.nu_axis)**2.
+                ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
+
+                ion_cos2 = np.cos(2. * ionAngle)
+                ion_sin2 = np.sin(2. * ionAngle)
+
+                QUout = np.zeros((p.nfreq,p.npix), dtype='complex128')
+                irnf.spinor_rotation(Qt,Ut, ion_cos2, ion_sin2, QUout)
+                Qt, Ut = QUout.real, QUout.imag
 
             sky_t = np.array([
                 [It + Qt, Ut - 1j*Vt],
@@ -446,19 +472,15 @@ def main(p, save=False):
                 # Could do this iteratively! Define the differential rotation
                 # and apply it in-place to the same sky tensor at each step of the time loop.
 
-            ## Ionosphere
-            """
-            ionrot.shape = (p.nfreq,npix 2,2)
-            """
 
-            # RMangle = get_rm_map()
-            # ion_cos = np.cos(RMangle)
-            # ion_sin = np.sin(RMangle)
-            ion_cos = np.ones((p.nfreq, npix))
-            ion_sin = np.zeros((p.nfreq, npix))
-            ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
-            ion_rot = np.transpose(ion_rot,(2,3,0,1))
-            ion_rotT = np.transpose(ion_rot,(0,1,3,2))
+            irnf.instrRIME_integral(ijones, sky_t, ijonesH, K, Vis[d,t,:,:,:].squeeze())
+
+            # ion_cos = np.ones((p.nfreq, npix))
+            # ion_sin = np.zeros((p.nfreq, npix))
+
+            # ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
+            # ion_rot = np.transpose(ion_rot,(2,3,0,1))
+            # ion_rotT = np.transpose(ion_rot,(0,1,3,2))
             # worried abou this...is the last line producing the right ordering,
             # or is ion_rot unchanged
 
@@ -466,7 +488,7 @@ def main(p, save=False):
             # irnf.jones_chain(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
             # irnf._RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
 
-            irnf.RIME_integral(ijones, ion_rot, sky_t, ion_rotT, ijonesH, K, Vis[b_i,t,:,:,:].squeeze())
+            # irnf.RIME_integral(ijones, ion_rot, sky_t, ion_rotT, ijonesH, K, Vis[d,t,:,:,:].squeeze())
 
     Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.time()
@@ -484,9 +506,6 @@ class Parameters:
     pass
 
 if __name__ == '__main__':
-    #print "Note! Horizon mask is off!"
-    print "Note! Ionosphere set to Identity!"
-    #print "Note: Horizon mask turned off!"
 
     #########
     # Dimensions and Boundaries
@@ -494,15 +513,23 @@ if __name__ == '__main__':
     global p
     p = Parameters()
 
-    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**6 # sets the spatial resolution of the simulation, for a given baseline
+
+    p.npix = hp.nside2npix(p.nside)
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 31 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 288  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 5  # the number of time samples in one rotation of the earch that will be computed
 
-    p.ndays = 1 # The number of days that will be simulated.
+    p.ndays = 2 # The number of days that will be simulated.
+
+    p.day0 = (2012, 1, 1) # a tuple of ints corresponding to  (year, month, day)
+
+    p.hours = 8
+
+    p.hour_offset = 8
 
     p.nu_0 = 1.4e8 # Hz. The high end of the simulated frequency band.
 
@@ -510,7 +537,6 @@ if __name__ == '__main__':
 
     p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
 
-#    p.baselines = [[15.,0,0],[0.,15.,0]]
     p.baselines = [[7.,14.,0]]
 
     p.nbaseline = len(p.baselines)
@@ -522,6 +548,8 @@ if __name__ == '__main__':
     p.PAPER_instrument = False # hack hack hack
 
     p.unpolarized = True
+
+    p.ionosphere = True
 
     ## OLD OPTIONS
     #   'linear' : linear interpolation between nodes
@@ -537,6 +565,8 @@ if __name__ == '__main__':
 
     if p.unpolarized == True:
         print "Polarization turned off"
+    if p.ionosphere == False:
+        print "Ionospheric rotation turned off"
 
-    main(p,save=True)
+    main(p)
     print "Compiled successfully"
