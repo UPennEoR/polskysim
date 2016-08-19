@@ -564,15 +564,15 @@ if __name__ == '__main__':
     global p
     p = Parameters()
 
-    p.nside = 2**6 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
 
     p.npix = hp.nside2npix(p.nside)
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 31 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 10  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
 
     p.ndays = 2 # The number of days that will be simulated.
 
