@@ -321,8 +321,11 @@ def get_time_string(d, day0):
     date0 = datetime(*day0)
     one_day = datetime(1,1,2) - datetime(1,1,1)
 
-    date = str(date0 + d * one_day).split(' ')[0]
-    time_str = date + 'T00:00:00'
+    # the trailing time string was removed from radionopy so prob. don't need this anymore
+    # date = str(date0 + d * one_day).split(' ')[0]
+    # time_str = date + 'T00:00:00'
+
+    time_str = str(date0 + d * one_day).split(' ')[0]
     return time_str
 
 def PAPER_instrument_setup(z0_cza):

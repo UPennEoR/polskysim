@@ -8,14 +8,18 @@ import time
 import numba_funcs as irnf
 import radiono
 
+import astropy.coordinates as coord
+import astropy.units as units
+from astropy.time import Time
+
 def Hz2GHz(freq):
     return freq / 1e9
 
 def get_gsm_cube():
     sys.path.append('/data4/paper/zionos/polskysim')
     import gsm2016_mod
-    import astropy.coordinates as coord
-    import astropy.units as units
+    # import astropy.coordinates as coord
+    # import astropy.units as units
 
     nside_in = 64
     npix_in = hp.nside2npix(nside_in)
@@ -309,7 +313,7 @@ def main(p):
         if p.unpolarized == True:
             Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
-    if True:
+    if False:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -347,6 +351,19 @@ def main(p):
 
         I = data['map'][:,0,:]
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+    if True:
+        if (p.nside != 64) or (p.nfreq != 31): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
+
+        import h5py
+
+        fpath = '/data4/paper/zionos/cora_maps/cora_polgalaxy1_nside64_nfreq31_band140_170.h5'
+        print 'Using ' + fpath
+        data = h5py.File(fpath)
+        if p.unpolarized == True:
+            I,_,_,_ = [data['map'][:,i,:] for i in [0,1,2,3]]
+            Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+        else:
+            I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
     I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
 
@@ -410,7 +427,7 @@ def main(p):
     Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
 
     l,m = hp.Alm.getlm(p.lmax)
-    sky_list = [I_alm, Q_alm, U_alm, V_alm]
+    sky_alms = [I_alm, Q_alm, U_alm, V_alm]
     # sky_list = [I,Q,U,V]
 
     tmark_loopstart = time.time()
@@ -431,38 +448,49 @@ def main(p):
     for d in range(p.ndays):
 
         ## XXX TODO
-        time_str = [irf.get_time_string(d, p.day0)]
+        time_str = [irf.get_time_string(d, p.day0)] # the time string needed by radiono
         print "d is " + str(t) + ", day is " + time_str[0]
 
         heraRM = radiono.rm.HERA_RM(time_str)
+        heraRM.make_radec_RM_maps()
 
-        hpxidx = np.arange(heraRM.npix)
-        cza, ra = hp.pix2ang(heraRM.nside, hpxidx)
-        dec = np.pi/2. - cza
+        c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_strs[0] + 'T00:00:00', format='isot'), location=heraRM.location)
 
-        c_icrs = coord.SkyCoord(ra=ra * u.radian, dec=dec * u.radian, location=heraRM.location, frame='icrs', obstime=Time(time_strs[0], format='isot'))
-
-        year_str = 'J' + str(datetime(*p.day0).year)
-        c_FK5 = c_icrs.transform_to(coord.FK5(equinox=year_str))
-
-        c_local = coord.AltAz(az=0. * u.degree, alt=90. * u.degree, obstime=Time(time_strs[0], format='isot'), location=heraRM.location)
-
-        c_local_Zeq = c_local.transform_to(c_icrs)
+        c_local_Zeq = c_local.transform_to(coord.ICRS)
         z0_ra = c_local_Zeq.ra.radian
 
-        ionRM = np.zeros((p.hours, p.npix))
-        for i in range(p.hours):
-            k = i + p.hour_offset
-            correctAngle = -z0_ra - np.radians(i * 15.)
-            temp = np.roll(heraRM.RMs[0,-k,:].squeeze(), -2 - p.hour_offset, axis=0)
-            ionRM[-i] = alm2map(map2alm(temp, 3*heraRM.nside -1) * m * correctAngle, p.nside)
+        hour0 = int(np.ceil(np.degrees(z0_ra/15.)))
 
-        ionRM = np.roll(ionRM, -2, axis=0) # local time is UTC+2. But wait, doesn't astropy know this? fuck
+        # the time axis on RMs starts at local midnight, by definition of the altaz<->radec transformation in radionopy
+        # but my time loop does not start at local midnight, it starts t=0 when local zenith is at ra=0
+        # the local time is hour0 ~= 11 hours after midnight at that point.
+        # so the first RM map that should be seen is RM[hour0-1, :]
+
+
+        # hour_inds = [(hour0 + p.hour_offset + x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
+        hour_axis = [hour0 + x % 24 for x in range(p.nhours)]
+
+        # if we aren't going to use all 24 hours of RM data, we don't want to be rotating and
+        # resampling all 24 hours, just the hours that will be used
+
+        ionRM_out = np.zeros((p.nhours, p.npix))
+        for i, hr in enumerate(hour_axis):
+            hrAngle = -z0_ra - np.radians(hr * 15.) # did i need to add the hour offset here? fuck
+            lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
+            mh_rot = np.exp(1j * mh * hrAngle)
+            ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside)
+
+            # k = i + p.hour_offset
+            # correctAngle = -z0_ra - np.radians(i * 15.)
+            # temp = np.roll(heraRM.RMs[0,-k,:].squeeze(), -2 - p.hour_offset, axis=0)
+            # ionRM_out[-i] = alm2map(map2alm(temp, 3*heraRM.nside -1) * m * correctAngle, p.nside)
+
         ## XXX TODO
 
-        for t in range(p.ntime):
+        ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
+        for t, h in enumerate(ionRM_index):
             print "t is " + str(t)
-            total_angle = float(p.hours * 15) # degrees
+            total_angle = float(p.nhours * 15) # degrees
             offset_angle = float(p.hour_offset * 15) # degrees
             zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) # radians
 
@@ -472,14 +500,15 @@ def main(p):
             RotAngle = -zl_ra # basicly Hour Angle with t=0
 
             mrot = np.exp(1j * m * RotAngle)
-            It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in sky_list]
+            It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in sky_alms]
 
             ## Ionosphere
             """
-            ionrot.shape = (p.nfreq,npix 2,2)
+            ionRM.shape = (p.nhours, p.nfreq, p.npix)
+            ionRM_t.shape = (p.nfreq,p.npix)
             """
             if p.ionosphere == True:
-                ionRM_t = ionRM[hour_ind] # pick out the map corresponding to this hour
+                ionRM_t = ionRM_out[h] # pick out the map corresponding to this hour
                 lbda2 = (c / p.nu_axis)**2.
                 ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
 
@@ -487,15 +516,13 @@ def main(p):
                 ion_sin2 = np.sin(2. * ionAngle)
 
                 QUout = np.zeros((p.nfreq,p.npix), dtype='complex128')
-                irnf.spinor_rotation(Qt,Ut, ion_cos2, ion_sin2, QUout)
-                Qt, Ut = QUout.real, QUout.imag
+                irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2, QUout)
+                Qt = QUout.real
+                Ut = QUout.imag
 
             sky_t = np.array([
                 [It + Qt, Ut - 1j*Vt],
                 [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
-                # Could do this iteratively! Define the differential rotation
-                # and apply it in-place to the same sky tensor at each step of the time loop.
-
 
             irnf.instrRIME_integral(ijones, sky_t, ijonesH, K, Vis[d,t,:,:,:].squeeze())
 
@@ -551,7 +578,7 @@ if __name__ == '__main__':
 
     p.day0 = (2012, 1, 1) # a tuple of ints corresponding to  (year, month, day)
 
-    p.hours = 8
+    p.nhours = 8
 
     p.hour_offset = 8
 
