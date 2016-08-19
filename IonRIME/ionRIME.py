@@ -406,7 +406,7 @@ def main(p):
     # V[t,f,0,1] == V_xy[t,f]
     # V[t,f,1,0] == V_yx[t,f]
     # V[t,f,1,1] == V_yy[t,f]
-    Vis = np.zeros(p.ndays, p.ntime * p.nfreq * 2 * 2, dtype='complex128')
+    Vis = np.zeros(p.ndays * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
     Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
 
     l,m = hp.Alm.getlm(p.lmax)
@@ -430,10 +430,35 @@ def main(p):
 
     for d in range(p.ndays):
 
-        time_str = [get_day_string(d, p.day0)]
-        print "d is " + str(t) + ", day is " time_str[0]
-        ionRM = radiono.rm.HERA_RM(time_str).RMs[0]
-        # ionRM = np.roll(ionRM, -2, axis=0) # local time is UTC+2. But wait, doesn't astropy know this? fuck
+        ## XXX TODO
+        time_str = [irf.get_time_string(d, p.day0)]
+        print "d is " + str(t) + ", day is " + time_str[0]
+
+        heraRM = radiono.rm.HERA_RM(time_str)
+
+        hpxidx = np.arange(heraRM.npix)
+        cza, ra = hp.pix2ang(heraRM.nside, hpxidx)
+        dec = np.pi/2. - cza
+
+        c_icrs = coord.SkyCoord(ra=ra * u.radian, dec=dec * u.radian, location=heraRM.location, frame='icrs', obstime=Time(time_strs[0], format='isot'))
+
+        year_str = 'J' + str(datetime(*p.day0).year)
+        c_FK5 = c_icrs.transform_to(coord.FK5(equinox=year_str))
+
+        c_local = coord.AltAz(az=0. * u.degree, alt=90. * u.degree, obstime=Time(time_strs[0], format='isot'), location=heraRM.location)
+
+        c_local_Zeq = c_local.transform_to(c_icrs)
+        z0_ra = c_local_Zeq.ra.radian
+
+        ionRM = np.zeros((p.hours, p.npix))
+        for i in range(p.hours):
+            k = i + p.hour_offset
+            correctAngle = -z0_ra - np.radians(i * 15.)
+            temp = np.roll(heraRM.RMs[0,-k,:].squeeze(), -2 - p.hour_offset, axis=0)
+            ionRM[-i] = alm2map(map2alm(temp, 3*heraRM.nside -1) * m * correctAngle, p.nside)
+
+        ionRM = np.roll(ionRM, -2, axis=0) # local time is UTC+2. But wait, doesn't astropy know this? fuck
+        ## XXX TODO
 
         for t in range(p.ntime):
             print "t is " + str(t)
@@ -453,8 +478,7 @@ def main(p):
             """
             ionrot.shape = (p.nfreq,npix 2,2)
             """
-            if p.ionosphere = True:
-                hour_ind = int(t * p.hours / p.ntime) + p.hour_offset
+            if p.ionosphere == True:
                 ionRM_t = ionRM[hour_ind] # pick out the map corresponding to this hour
                 lbda2 = (c / p.nu_axis)**2.
                 ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
@@ -513,13 +537,13 @@ if __name__ == '__main__':
     global p
     p = Parameters()
 
-    p.nside = 2**6 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
 
     p.npix = hp.nside2npix(p.nside)
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 31 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
 
     p.ntime = 5  # the number of time samples in one rotation of the earch that will be computed
 
@@ -547,7 +571,7 @@ if __name__ == '__main__':
 
     p.PAPER_instrument = False # hack hack hack
 
-    p.unpolarized = True
+    p.unpolarized = False
 
     p.ionosphere = True
 

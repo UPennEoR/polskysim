@@ -22,13 +22,13 @@ def spinor_rotation(q,u,cos,sin,qun):
 
 @guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:],complex128[:,:]',
  '(n,a,b),(n,b,c),(n,c,d),(n)->(a,d)',nopython=True, target='parallel')
-def instrRIME_integral(m1,m2,m3,m4,m5,K,V):
+def instrRIME_integral(m1,m2,m3,K,V):
     for n in range(K.shape[0]):
         for a in range(2):
             for b in range(2):
                 for c in range(2):
                     for d in range(2):
-                        V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * K[n]
+                        V[a,d] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * K[n]
 
 
 @jit(nopython=True)
