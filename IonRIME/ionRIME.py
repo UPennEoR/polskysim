@@ -449,12 +449,12 @@ def main(p):
 
         ## XXX TODO
         time_str = [irf.get_time_string(d, p.day0)] # the time string needed by radiono
-        print "d is " + str(t) + ", day is " + time_str[0]
+        print "d is " + str(d) + ", day is " + time_str[0]
 
         heraRM = radiono.rm.HERA_RM(time_str)
         heraRM.make_radec_RM_maps()
 
-        c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_strs[0] + 'T00:00:00', format='isot'), location=heraRM.location)
+        c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_str[0] + 'T00:00:00', format='isot'), location=heraRM.location)
 
         c_local_Zeq = c_local.transform_to(coord.ICRS)
         z0_ra = c_local_Zeq.ra.radian
@@ -478,7 +478,7 @@ def main(p):
             hrAngle = -z0_ra - np.radians(hr * 15.) # did i need to add the hour offset here? fuck
             lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
             mh_rot = np.exp(1j * mh * hrAngle)
-            ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside)
+            ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
 
             # k = i + p.hour_offset
             # correctAngle = -z0_ra - np.radians(i * 15.)
@@ -564,15 +564,15 @@ if __name__ == '__main__':
     global p
     p = Parameters()
 
-    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
+    p.nside = 2**6 # sets the spatial resolution of the simulation, for a given baseline
 
     p.npix = hp.nside2npix(p.nside)
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
+    p.nfreq = 31 # the number of frequency channels at which visibilities will be computed.
 
-    p.ntime = 5  # the number of time samples in one rotation of the earch that will be computed
+    p.ntime = 10  # the number of time samples in one rotation of the earch that will be computed
 
     p.ndays = 2 # The number of days that will be simulated.
 
