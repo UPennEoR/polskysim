@@ -1,5 +1,6 @@
 from numba import jit
 from numba import guvectorize
+from numba import vectorize
 import numpy as np
 
 @guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:],complex128[:,:]',
@@ -14,12 +15,9 @@ def RIME_integral_2jones(m1,m2,m3,m4,m5,K,V):
                             for f in range(2):
                                 V[a,f] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * m4[n,d,e] * m5[n,e,f] * K[n]
 
-# this seems to be the fastest way of various numpy/numba programs. see sim_box/numba_vs_numpy_rot.ipynb
-@guvectorize('float64[:],float64[:],float64[:],float64[:],complex128[:]',
- '(n),(n),(n),(n)->(n)', nopython=True, target='parallel')
-def complex_rotation(q,u,cos,sin,qun):
-    qun = (q + 1j*u) * (cos + 1j*sin)
-
+@vectorize(['complex128(float64,float64,float64,float64)'], nopython=True, target='parallel')
+def complex_rotation(q,u,cos,sin):
+    return (q+1j*u)*(cos+1j*sin)
 
 @guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],complex128[:],complex128[:,:]',
  '(n,a,b),(n,b,c),(n,c,d),(n)->(a,d)',nopython=True, target='parallel')
@@ -30,6 +28,43 @@ def instrRIME_integral(m1,m2,m3,K,V):
                 for c in range(2):
                     for d in range(2):
                         V[a,d] += m1[n,a,b] * m2[n,b,c] * m3[n,c,d] * K[n]
+
+@guvectorize('complex128[:,:,:],complex128[:,:,:],complex128[:,:,:],float64[:],float64[:],complex128[:],complex128[:,:]',
+ '(n,a,b),(n,b,c),(n,c,d),(n),(n),(n)->(a,d)')
+def RIME_integral_c(J,C,Jh,cos,sin,K,Vis):
+    I = C[:,0,0] + C[:,1,1]
+    Q = (C[:,0,0] - C[:,1,1])/2
+    U = C[:,1,1]
+    QUn = complex_rotation(Q,U,cos,sin)
+    Qn,Un = QUn.real,QUn.imag
+
+    C[:,0,0] = I + Qn
+    C[:,0,1] = Un
+    C[:,1,0] = Un
+    C[:,1,1] = I - Qn
+
+    for n in range(K.shape[0]):
+        for a in range(2):
+            for b in range(2):
+                for c in range(2):
+                    for d in range(2):
+                        Vis[a,d] += J[n,a,b] * C[n,b,c] * Jh[n,c,d] * K[n]
+
+# @guvectorize('complex128[:,:,:],complex128[:,:,:],float64[:],float64[:],float64[:],float64[:],float64[:],float64[:],complex128[:],complex128[:,:]',
+#  '(n,a,b),(n,b,c),(n),(n),(n),(n),(n),(n),(n),(n)->(a,c)')
+# def RIME_integral_c(J,Jh,I,Q,U,V,cos,sin,K,Vis):
+#     QUn = complex_rotation(Q,U,cos,sin)
+#     Qn,Un = QUn.real,QUn.imag
+#     C = np.array([
+#     [I + Qn, Un - 1j*V],
+#     [Un + 1j*V, I - Qn]]).transpose(2,0,1)
+#
+#     for n in range(K.shape[0]):
+#         for a in range(2):
+#             for b in range(2):
+#                 for c in range(2):
+#                     for d in range(2):
+#                         Vis[a,d] += J[n,a,b] * C[n,b,c] * Jh[n,c,d] * K[n]
 
 @jit(nopython=True)
 def M(m1,m2):
@@ -100,6 +135,13 @@ def _RIME_integral(C, K, V):
             for j in range(2):
                 V[i, j] += C[pi,i,j]*K[pi]
 #    V /= np.float(np.size(K))
+
+
+# This doesn't even work!
+# @guvectorize('float64[:],float64[:],float64[:],float64[:],complex128[:]',
+#  '(n),(n),(n),(n)->(n)', nopython=True, target='parallel')
+# def complex_rotation(q,u,cos,sin,qun):
+#     qun = (q + 1j*u) * (cos + 1j*sin)
 
 ## Old versions
 # @jit(nopython=True)

@@ -327,7 +327,7 @@ def main(p):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
-    if False:
+    if True:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -351,7 +351,7 @@ def main(p):
 
         I = data['map'][:,0,:]
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
-    if True:
+    if False:
         if (p.nside != 64) or (p.nfreq != 31): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -418,14 +418,6 @@ def main(p):
     ## Baselines
     bl_eq = irf.transform_baselines(p.baselines) # get baseline vectors in equatorial coordinates
 
-    ## For each (t,f):
-    # V[t,f,0,0] == V_xx[t,f]
-    # V[t,f,0,1] == V_xy[t,f]
-    # V[t,f,1,0] == V_yx[t,f]
-    # V[t,f,1,1] == V_yy[t,f]
-    Vis = np.zeros(p.ndays * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
-    Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
-
     l,m = hp.Alm.getlm(p.lmax)
     sky_alms = [I_alm, Q_alm, U_alm, V_alm]
     # sky_list = [I,Q,U,V]
@@ -444,48 +436,50 @@ def main(p):
     tau = b_dot_s / c
     K = np.exp(-2. * np.pi * 1j * np.outer(np.ones(p.nfreq), tau) * np.outer(p.nu_axis, np.ones(npix)) )
 
+    if p.ionosphere == False:
+        p.ndays = 1
+
+    ## For each (t,f):
+    # V[t,f,0,0] == V_xx[t,f]
+    # V[t,f,0,1] == V_xy[t,f]
+    # V[t,f,1,0] == V_yx[t,f]
+    # V[t,f,1,1] == V_yy[t,f]
+    Vis = np.zeros(p.ndays * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
+    Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
 
     for d in range(p.ndays):
+        if p.ionosphere == True:
+            time_str = [irf.get_time_string(d, p.day0)] # the time string needed by radiono
+            print "d is " + str(d) + ", day is " + time_str[0]
 
-        ## XXX TODO
-        time_str = [irf.get_time_string(d, p.day0)] # the time string needed by radiono
-        print "d is " + str(d) + ", day is " + time_str[0]
+            heraRM = radiono.rm.HERA_RM(time_str)
+            heraRM.make_radec_RM_maps()
 
-        heraRM = radiono.rm.HERA_RM(time_str)
-        heraRM.make_radec_RM_maps()
+            c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_str[0] + 'T00:00:00', format='isot'), location=heraRM.location)
 
-        c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_str[0] + 'T00:00:00', format='isot'), location=heraRM.location)
+            c_local_Zeq = c_local.transform_to(coord.ICRS)
+            z0_ra = c_local_Zeq.ra.radian
 
-        c_local_Zeq = c_local.transform_to(coord.ICRS)
-        z0_ra = c_local_Zeq.ra.radian
+            hour0 = int(np.ceil(np.degrees(z0_ra/15.)))
 
-        hour0 = int(np.ceil(np.degrees(z0_ra/15.)))
-
-        # the time axis on RMs starts at local midnight, by definition of the altaz<->radec transformation in radionopy
-        # but my time loop does not start at local midnight, it starts t=0 when local zenith is at ra=0
-        # the local time is hour0 ~= 11 hours after midnight at that point.
-        # so the first RM map that should be seen is RM[hour0-1, :]
+            # the time axis on RMs starts at local midnight, by definition of the altaz<->radec transformation in radionopy
+            # but my time loop does not start at local midnight, it starts t=0 when local zenith is at ra=0
+            # the local time is hour0 ~= 11 hours after midnight at that point.
+            # so the first RM map that should be seen is RM[hour0-1, :]
 
 
-        # hour_inds = [(hour0 + p.hour_offset + x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
-        hour_axis = [hour0 + x % 24 for x in range(p.nhours)]
+            # hour_inds = [(hour0 + p.hour_offset + x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
+            hour_axis = [hour0 + x % 24 for x in range(p.nhours)]
 
-        # if we aren't going to use all 24 hours of RM data, we don't want to be rotating and
-        # resampling all 24 hours, just the hours that will be used
+            # if we aren't going to use all 24 hours of RM data, we don't want to be rotating and
+            # resampling all 24 hours, just the hours that will be used
 
-        ionRM_out = np.zeros((p.nhours, p.npix))
-        for i, hr in enumerate(hour_axis):
-            hrAngle = -z0_ra - np.radians(hr * 15.) # did i need to add the hour offset here? fuck
-            lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
-            mh_rot = np.exp(1j * mh * hrAngle)
-            ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
-
-            # k = i + p.hour_offset
-            # correctAngle = -z0_ra - np.radians(i * 15.)
-            # temp = np.roll(heraRM.RMs[0,-k,:].squeeze(), -2 - p.hour_offset, axis=0)
-            # ionRM_out[-i] = alm2map(map2alm(temp, 3*heraRM.nside -1) * m * correctAngle, p.nside)
-
-        ## XXX TODO
+            ionRM_out = np.zeros((p.nhours, p.npix))
+            for i, hr in enumerate(hour_axis):
+                hrAngle = -z0_ra - np.radians(hr * 15.) # did i need to add the hour offset here? fuck
+                lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
+                mh_rot = np.exp(1j * mh * hrAngle)
+                ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
 
         ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
         for t, h in enumerate(ionRM_index):
@@ -509,16 +503,28 @@ def main(p):
             """
             if p.ionosphere == True:
                 ionRM_t = ionRM_out[h] # pick out the map corresponding to this hour
+                # print "ionRM_t.shape is ", ionRM_t.shape
                 lbda2 = (c / p.nu_axis)**2.
                 ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
+
+                # print "ionAngle.shape is ", ionAngle.shape
 
                 ion_cos2 = np.cos(2. * ionAngle)
                 ion_sin2 = np.sin(2. * ionAngle)
 
-                QUout = np.zeros((p.nfreq,p.npix), dtype='complex128')
-                irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2, QUout)
+                # print "Checking ionospheric rotation"
+                # print "Cos above zero: ", len(np.where(abs(ion_cos2) > 1e-5)[0])
+                # print "Sin above zero: ", len(np.where(abs(ion_sin2) > 1e-5)[0])
+
+                QUout = irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2)
+                # QUout = (Qt + 1j*Ut) * (ion_cos2 + 1j*ion_sin2)
                 Qt = QUout.real
                 Ut = QUout.imag
+
+                if (t in [0,1,2,3,4,5]):
+                    print "Checking Q and U"
+                    print "Q above zero: ", len(np.where(abs(Qt) > 1e-5)[0])
+                    print "U above zero: ", len(np.where(abs(Ut) > 1e-5)[0])
 
             sky_t = np.array([
                 [It + Qt, Ut - 1j*Vt],
@@ -546,9 +552,11 @@ def main(p):
     print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
     print "Full run in " + str(tmark_loopstop -tmark0) + " seconds."
 
-    out_name = "Vis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
+    out_name = "_testVis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
     if p.unpolarized == True:
         out_name = "unpol" + out_name
+    if (p.unpolarized == False) and (p.ionosphere == False):
+        out_name = "noion" + out_name
 
     #if os.path.exists(out_name) == False:
     np.savez('output_vis/' + out_name, Vis=Vis, baselines=p.baselines)
@@ -601,6 +609,9 @@ if __name__ == '__main__':
     p.unpolarized = False
 
     p.ionosphere = True
+
+    if (p.unpolarized == True) and (p.ionosphere == True):
+        raise Exception('Simulation includes the ionosphere with an unpolarized sky! Dummy!')
 
     ## OLD OPTIONS
     #   'linear' : linear interpolation between nodes
