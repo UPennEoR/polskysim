@@ -11,6 +11,7 @@ import radiono
 import astropy.coordinates as coord
 import astropy.units as units
 from astropy.time import Time
+import yaml
 
 def Hz2GHz(freq):
     return freq / 1e9
@@ -288,6 +289,63 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
+# @profile
+def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,sky_t,K,Vis):
+
+    print "t is " + str(t)
+    total_angle = float(p.nhours * 15) # degrees
+    offset_angle = float(p.hour_offset * 15) # degrees
+    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) # radians
+
+    npix = hp.nside2npix(p.nside)
+
+    RotAxis = np.array([0.,0.,1.])
+    RotAngle = -zl_ra # basicly Hour Angle with t=0
+
+    mrot = np.exp(1j * m * RotAngle)
+
+    # temp = []
+    # for x in sky_alms:
+    #     temp1 = x * mrot
+    #     temp2 = alm2map(temp1, p.nside)
+    #     temp.append(temp2)
+
+    temp = np.zeros((3,p.nfreq,p.npix))
+    for x in sky_alms:
+        for fi in range(x.shape[0]):
+            temp1 = x[fi] * mrot
+            temp[0,fi,:] = hp.alm2map(temp1, p.nside, verbose=False)
+
+    It,Qt,Ut = temp[0],temp[1],temp[2]
+    # It, Qt, Ut = [alm2map(x * mrot, p.nside) for x in sky_alms]
+
+    ## Ionosphere
+    """
+    ionRM.shape = (p.nhours, p.nfreq, p.npix)
+    ionRM_t.shape = (p.nfreq,p.npix)
+    """
+    if p.ionosphere == True:
+        ionRM_t = ionRM_out[h] # pick out the map corresponding to this hour
+
+        c = 299792458. # meters / sec
+        lbda2 = (c / p.nu_axis)**2.
+        ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
+
+        ion_cos2 = irnf.numbap_cos(2. * ionAngle) # numba can multithread a numpy ufunc, no fuss no muss!
+        ion_sin2 = irnf.numbap_sin(2. * ionAngle)
+        # ion_cos2 = np.cos(2. * ionAngle)
+        # ion_sin2 = np.sin(2. * ionAngle)
+
+        QUout = irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2)
+        Qt = QUout.real
+        Ut = QUout.imag
+
+    sky_t = np.array([
+        [It + Qt, Ut],
+        [Ut, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
+
+    irnf.instrRIME_integral(ijones, sky_t, ijonesH, K, Vis[d,t,:,:,:].squeeze())
+
 def main(p):
 
     npix = hp.nside2npix(p.nside)
@@ -365,8 +423,11 @@ def main(p):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
-    I_alm, Q_alm, U_alm, V_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U,V])
-
+    I_alm, Q_alm, U_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U])
+    if p.circular_pol == True:
+        V_alm = map2alm(V, p.lmax)
+    else:
+        del V
     ## Instrument
     """
     Jdata.shape = (nfreq_in, p.npix, 2, 2)
@@ -419,7 +480,9 @@ def main(p):
     bl_eq = irf.transform_baselines(p.baselines) # get baseline vectors in equatorial coordinates
 
     l,m = hp.Alm.getlm(p.lmax)
-    sky_alms = [I_alm, Q_alm, U_alm, V_alm]
+    sky_alms = [I_alm, Q_alm, U_alm]
+    if p.circular_pol == True:
+        sky_alms.append(V_alm)
     # sky_list = [I,Q,U,V]
 
     tmark_loopstart = time.time()
@@ -446,6 +509,9 @@ def main(p):
     # V[t,f,1,1] == V_yy[t,f]
     Vis = np.zeros(p.ndays * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
     Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
+
+    # sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='complex128')
+    sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='float64')
 
     for d in range(p.ndays):
         if p.ionosphere == True:
@@ -482,56 +548,71 @@ def main(p):
                 ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
 
         ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
+
         for t, h in enumerate(ionRM_index):
-            print "t is " + str(t)
-            total_angle = float(p.nhours * 15) # degrees
-            offset_angle = float(p.hour_offset * 15) # degrees
-            zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) # radians
 
-            npix = hp.nside2npix(p.nside)
+            compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,sky_t,K,Vis)
 
-            RotAxis = np.array([0.,0.,1.])
-            RotAngle = -zl_ra # basicly Hour Angle with t=0
+            # print "t is " + str(t)
+            # total_angle = float(p.nhours * 15) # degrees
+            # offset_angle = float(p.hour_offset * 15) # degrees
+            # zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) # radians
+            #
+            # npix = hp.nside2npix(p.nside)
+            #
+            # RotAxis = np.array([0.,0.,1.])
+            # RotAngle = -zl_ra # basicly Hour Angle with t=0
+            #
+            # mrot = np.exp(1j * m * RotAngle)
+            # It, Qt, Ut = [alm2map(x * mrot, p.nside) for x in sky_alms]
+            #
+            # ## Ionosphere
+            # """
+            # ionRM.shape = (p.nhours, p.nfreq, p.npix)
+            # ionRM_t.shape = (p.nfreq,p.npix)
+            # """
+            # if p.ionosphere == True:
+            #     ionRM_t = ionRM_out[h] # pick out the map corresponding to this hour
+            #
+            #     lbda2 = (c / p.nu_axis)**2.
+            #     ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
+            #
+            #     ion_cos2 = np.cos(2. * ionAngle)
+            #     ion_sin2 = np.sin(2. * ionAngle)
+            #
+            #     QUout = irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2)
+            #     Qt = QUout.real
+            #     Ut = QUout.imag
+            #
+            #     # if (t in [0,1,2,3,4,5]):
+            #     #     print "Checking Q and U"
+            #     #     print "Q above zero: ", len(np.where(abs(Qt) > 1e-5)[0])
+            #     #     print "U above zero: ", len(np.where(abs(Ut) > 1e-5)[0])
+            #
+            #
+            # # sky_t = np.array([
+            # #     [It + Qt, Ut],
+            # #     [Ut, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
+            #
+            # sky_t[:,:,0,0] = It + Qt
+            # sky_t[:,:,0,1] = Ut
+            # sky_t[:,:,1,0] = Ut
+            # sky_t[:,:,1,1] = It - Qt
+            #
+            # irnf.instrRIME_integral(ijones, sky_t, ijonesH, K, Vis[d,t,:,:,:].squeeze())
 
-            mrot = np.exp(1j * m * RotAngle)
-            It, Qt, Ut, Vt = [alm2map(x * mrot, p.nside) for x in sky_alms]
+            ##############
 
-            ## Ionosphere
-            """
-            ionRM.shape = (p.nhours, p.nfreq, p.npix)
-            ionRM_t.shape = (p.nfreq,p.npix)
-            """
-            if p.ionosphere == True:
-                ionRM_t = ionRM_out[h] # pick out the map corresponding to this hour
-                # print "ionRM_t.shape is ", ionRM_t.shape
-                lbda2 = (c / p.nu_axis)**2.
-                ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
+            # sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='complex128')
+            # sky_t[:,:,0,0] = It + Qt
+            # sky_t[:,:,0,1] = Ut
+            # sky_t[:,:,1,0] = Ut
+            # sky_t[:,:,1,1] = It - Qt
 
-                # print "ionAngle.shape is ", ionAngle.shape
 
-                ion_cos2 = np.cos(2. * ionAngle)
-                ion_sin2 = np.sin(2. * ionAngle)
 
-                # print "Checking ionospheric rotation"
-                # print "Cos above zero: ", len(np.where(abs(ion_cos2) > 1e-5)[0])
-                # print "Sin above zero: ", len(np.where(abs(ion_sin2) > 1e-5)[0])
 
-                QUout = irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2)
-                # QUout = (Qt + 1j*Ut) * (ion_cos2 + 1j*ion_sin2)
-                Qt = QUout.real
-                Ut = QUout.imag
-
-                if (t in [0,1,2,3,4,5]):
-                    print "Checking Q and U"
-                    print "Q above zero: ", len(np.where(abs(Qt) > 1e-5)[0])
-                    print "U above zero: ", len(np.where(abs(Ut) > 1e-5)[0])
-
-            sky_t = np.array([
-                [It + Qt, Ut - 1j*Vt],
-                [Ut + 1j*Vt, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
-
-            irnf.instrRIME_integral(ijones, sky_t, ijonesH, K, Vis[d,t,:,:,:].squeeze())
-
+            ###### OLD ############
             # ion_cos = np.ones((p.nfreq, npix))
             # ion_sin = np.zeros((p.nfreq, npix))
 
@@ -552,75 +633,88 @@ def main(p):
     print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
     print "Full run in " + str(tmark_loopstop -tmark0) + " seconds."
 
-    out_name = "_testVis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
+    # output_basedir = 'output_vis/'
+
+    # sim_dir_name =
+
+    out_name = "Vis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
     if p.unpolarized == True:
         out_name = "unpol" + out_name
     if (p.unpolarized == False) and (p.ionosphere == False):
         out_name = "noion" + out_name
 
+    out_name = p.outname_prefix + out_name
+
     #if os.path.exists(out_name) == False:
     np.savez('output_vis/' + out_name, Vis=Vis, baselines=p.baselines)
 
 class Parameters:
-    pass
+    def __init__(self, param_dict):
+        for key in param_dict:
+            setattr(self, key, param_dict[key])
 
 if __name__ == '__main__':
 
     #########
     # Dimensions and Boundaries
 
-    global p
-    p = Parameters()
+    # global p
+    # p = Parameters()
+    #
+    # p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
+    #
+    # p.npix = hp.nside2npix(p.nside)
+    #
+    # p.lmax = 3 * p.nside - 1
+    #
+    # p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
+    #
+    # p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
+    #
+    # p.ndays = 2 # The number of days that will be simulated.
+    #
+    # p.day0 = (2012, 1, 1) # a tuple of ints corresponding to  (year, month, day)
+    #
+    # p.nhours = 8
+    #
+    # p.hour_offset = 8
+    #
+    # p.nu_0 = 1.4e8 # Hz. The high end of the simulated frequency band.
+    #
+    # p.nu_f = 1.7e8 # Hz. The low end of the simulated frequency band.
+    #
+    # p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
+    #
+    # p.baselines = [[7.,14.,0]]
+    #
+    # p.nbaseline = len(p.baselines)
+    #
+    # p.interp_type = 'cubic'
+    # # options for interpolation are:
+    # # 'linear' and 'cubic', both via scipy.interpolate.interp1d()
+    #
+    # p.PAPER_instrument = False # hack hack hack
+    #
+    # p.unpolarized = False
+    #
+    # p.ionosphere = True
 
-    p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
+    yamlfile = file('parameters.yaml', 'r')
+    param_dict = yaml.load(yamlfile)
+    p = Parameters(param_dict)
 
     p.npix = hp.nside2npix(p.nside)
 
     p.lmax = 3 * p.nside - 1
 
-    p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
-
-    p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
-
-    p.ndays = 2 # The number of days that will be simulated.
-
-    p.day0 = (2012, 1, 1) # a tuple of ints corresponding to  (year, month, day)
-
-    p.nhours = 8
-
-    p.hour_offset = 8
-
-    p.nu_0 = 1.4e8 # Hz. The high end of the simulated frequency band.
-
-    p.nu_f = 1.7e8 # Hz. The low end of the simulated frequency band.
-
     p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
 
-    p.baselines = [[7.,14.,0]]
+    for key in param_dict:
+        print key,":",param_dict[key],":",type(param_dict[key])
 
-    p.nbaseline = len(p.baselines)
-
-    p.interp_type = 'cubic'
-    # options for interpolation are:
-    # 'linear' and 'cubic', both via scipy.interpolate.interp1d()
-
-    p.PAPER_instrument = False # hack hack hack
-
-    p.unpolarized = False
-
-    p.ionosphere = True
-
+    print p.interp_type
     if (p.unpolarized == True) and (p.ionosphere == True):
         raise Exception('Simulation includes the ionosphere with an unpolarized sky! Dummy!')
-
-    ## OLD OPTIONS
-    #   'linear' : linear interpolation between nodes
-    #   'hermite': Piecewise Cubic Hermite Interpolating Polynomials between each
-    #       pair of nodes. This produces a monotonic interpolant between each pair
-    #       of nodes, but the derivative is not continuous at the nodes i.e there
-    #       are corners in the interpolant. This one takes the longest to compute, ~6.5x 'linear'.
-    #   'fitspline': cubic spline fit to the nodes. Does NOT interpolate the nodes.
-    #   'spline': interpolating cubic spline
 
     global debug
     debug = False
@@ -629,6 +723,9 @@ if __name__ == '__main__':
         print "Polarization turned off"
     if p.ionosphere == False:
         print "Ionospheric rotation turned off"
+
+    if p.circular_pol == False:
+        print "No circular polarization! Booooo."
 
     main(p)
     print "Compiled successfully"
