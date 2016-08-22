@@ -290,7 +290,7 @@ def alm2map(almarr, nside):
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
 # @profile
-def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,sky_t,K,Vis):
+def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis):
 
     print "t is " + str(t)
     total_angle = float(p.nhours * 15) # degrees
@@ -311,10 +311,10 @@ def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,sky_t,K,Vis):
     #     temp.append(temp2)
 
     temp = np.zeros((3,p.nfreq,p.npix))
-    for x in sky_alms:
+    for xi,x in enumerate(sky_alms):
         for fi in range(x.shape[0]):
             temp1 = x[fi] * mrot
-            temp[0,fi,:] = hp.alm2map(temp1, p.nside, verbose=False)
+            temp[xi,fi,:] = hp.alm2map(temp1, p.nside, verbose=False)
 
     It,Qt,Ut = temp[0],temp[1],temp[2]
     # It, Qt, Ut = [alm2map(x * mrot, p.nside) for x in sky_alms]
@@ -511,7 +511,7 @@ def main(p):
     Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
 
     # sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='complex128')
-    sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='float64')
+    # sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='float64')
 
     for d in range(p.ndays):
         if p.ionosphere == True:
@@ -546,12 +546,13 @@ def main(p):
                 lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
                 mh_rot = np.exp(1j * mh * hrAngle)
                 ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
-
+        else:
+            ionRM_out = None
         ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
 
         for t, h in enumerate(ionRM_index):
 
-            compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,sky_t,K,Vis)
+            compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis)
 
             # print "t is " + str(t)
             # total_angle = float(p.nhours * 15) # degrees
