@@ -3,6 +3,10 @@ import math
 import healpy as hp
 from datetime import datetime
 
+import scipy.interpolate as interpolate
+
+import numba_funcs as irnf
+
 def rotate_sphr_coords(R, theta, phi):
     """
     Returns the spherical coordinates of the point specified by vp = R . v,
@@ -328,7 +332,12 @@ def get_time_string(d, day0):
     time_str = str(date0 + d * one_day).split(' ')[0]
     return time_str
 
-def PAPER_instrument_setup(p, z0_cza):
+def PAPER_instrument_setup(param, z0_cza):
+
+    import sys
+    sys.path.append('PAPER_beams/')
+    import fmt
+
     fekoX = fmt.FEKO('PAPER_beams/PAPER_FF_X.ffe')
 
     fekoY = fmt.FEKO('PAPER_beams/PAPER_FF_Y.ffe')
@@ -416,7 +425,7 @@ def PAPER_instrument_setup(p, z0_cza):
 
     jflat = np.zeros((nfreq_in,npix,8), dtype='float64')
     for f in range(nfreq_in):
-        jflat[f] = zt.flatten_jones(jones_hpx[f])
+        jflat[f] = flatten_jones(jones_hpx[f])
 
     lmax = 3 * nside -1
     nlm = hp.Alm.getsize(lmax)
@@ -433,7 +442,7 @@ def PAPER_instrument_setup(p, z0_cza):
     interpolant_re = interpolate.interp1d(freqs,joneslm_re,kind='cubic',axis=0)
     interpolant_im = interpolate.interp1d(freqs,joneslm_im,kind='cubic',axis=0)
 
-    freqs_out = p.nu_axis
+    freqs_out = param.nu_axis /1e6
     nfreq_out = len(freqs_out)
 
     joneslm_re_flat = interpolant_re(freqs_out)
@@ -441,7 +450,7 @@ def PAPER_instrument_setup(p, z0_cza):
 
     joneslm_flat = joneslm_re_flat + 1j*joneslm_im_flat
 
-    nside2 = p.nside
+    nside2 = param.nside
     npix2 = hp.nside2npix(nside2)
 
     isht = lambda x: hp.alm2map(np.ascontiguousarray(x), nside2,verbose=False) # I think the contiguaty of the array comes from when the FEKO data was read in Fortran ordering
@@ -451,7 +460,7 @@ def PAPER_instrument_setup(p, z0_cza):
     #     temp = np.zeros((nlm,8),dtype='complex128')
     #     for i in range(8):
     #         temp[:,i] = isht(joneslm_flat[f,:,i].squeeze())
-        jones_up[f] = zt.inverse_flatten_jones(temp)
+        jones_up[f] = inverse_flatten_jones(temp)
 
     theta, phi = hp.pix2ang(nside2, np.arange(npix2))
 
@@ -472,9 +481,8 @@ def PAPER_instrument_setup(p, z0_cza):
     jones_up2[:,:,1,0] = cosp * ya + sinp * yb
     jones_up2[:,:,1,1] = -sinp * ya + cosp * yb
 
-    npix = hp.nside2npix(nside_in)
-    hpxidx = np.arange(npix)
-    cza, ra = hp.pix2ang(nside_in, hpxidx)
+    hpxidx = np.arange(npix2)
+    cza, ra = hp.pix2ang(nside2, hpxidx)
 
     z0 = r_hat_cart(z0_cza, 0.)
 
@@ -486,27 +494,55 @@ def PAPER_instrument_setup(p, z0_cza):
 
     t0, p0 = rotate_sphr_coords(R_z0, cza, ra)
 
-    hm = np.zeros(npix)
+    hm = np.zeros(npix2)
     hm[np.where(cza < (np.pi / 2. + np.pi / 20.))] = 1
 
-    Jdata = np.zerso((p.nfreq,p.npix,2,2), dtype='complex128')
+    Jdata = np.zeros((param.nfreq,param.npix,2,2), dtype='complex128')
 
-    for f in range(p.nfreq):
+    for f in range(param.nfreq):
         J_f = flatten_jones(jones_up2[f])
 
-        J_f *= np.tile(hm, 8).reshape(8, npix).transpose(1,0)
+        J_f *= np.tile(hm, 8).reshape(8, npix2).transpose(1,0)
 
         J_f = rotate_jones(J_f, R_z0, multiway=False)
 
         J_f = inverse_flatten_jones(J_f)
 
-        J_f = transform_basis(p.nside, J_f, z0_cza, R_z0)
+        J_f = PAPER_transform_basis(param.nside, J_f, z0_cza, R_z0)
 
         Jdata[i,:,:,:] = J_f
+        print f
 
     return Jdata
 
+def PAPER_transform_basis(nside, jones, z0_cza, R_z0):
+    """
+    At zenith in the local frame the 'x' feed is aligned with 'theta' and
+    the 'y' feed is aligned with 'phi'
+    """
+    npix = hp.nside2npix(nside)
+    hpxidx = np.arange(npix)
+    cza, ra = hp.pix2ang(nside, hpxidx)
 
+    fR = R_z0
+
+    tb, pb = rotate_sphr_coords(fR, cza, ra)
+
+    cza_v = t_hat_cart(cza, ra)
+    ra_v = p_hat_cart(cza, ra)
+
+    tb_v = t_hat_cart(tb, pb)
+
+    fRcza_v = np.einsum('ab...,b...->a...', fR, cza_v)
+    fRra_v = np.einsum('ab...,b...->a...', fR, ra_v)
+
+    cosX = np.einsum('a...,a...', fRcza_v, tb_v)
+    sinX = np.einsum('a...,a...', fRra_v, tb_v)
+
+    basis_rot = np.array([[cosX, sinX],[-sinX, cosX]])
+    basis_rot = np.transpose(basis_rot,(2,0,1))
+
+    return irnf.M(jones, basis_rot)
 
 def old_PAPER_instrument_setup(z0_cza):
     # hack hack hack

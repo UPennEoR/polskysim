@@ -1,4 +1,4 @@
- import numpy as np
+import numpy as np
 import healpy as hp
 import os
 from scipy import interpolate
@@ -485,7 +485,7 @@ def main(p):
             ijones = np.load('jones_save/PAPER/' + fname)
             print "Restored Jones model"
         else:
-            ijones = irf.PAPER_instrument_setup(p)
+            ijones = irf.PAPER_instrument_setup(p, z0_cza)
             np.save('jones_save/PAPER/' + fname, ijones)
 
             tmark_inst = time.time()
@@ -698,7 +698,10 @@ def main(p):
     out_name = p.outname_prefix + out_name
 
     #if os.path.exists(out_name) == False:
-    np.savez('output_vis/' + out_name, Vis=Vis, param_dict=p.__dict__)
+    if p.PAPER_instrument == True:
+        np.savez('output_vis/PAPER/' + out_name, Vis=Vis, param_dict=p.__dict__)
+    else:
+        np.savez('output_vis/' + out_name, Vis=Vis, param_dict=p.__dict__)
 
     # np.savez('output_vis/' + 'param_dict_' + out_name, param_dict=p.__dict__)
 
