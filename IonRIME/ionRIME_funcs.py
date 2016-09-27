@@ -328,7 +328,187 @@ def get_time_string(d, day0):
     time_str = str(date0 + d * one_day).split(' ')[0]
     return time_str
 
-def PAPER_instrument_setup(z0_cza):
+def PAPER_instrument_setup(p, z0_cza):
+    fekoX = fmt.FEKO('PAPER_beams/PAPER_FF_X.ffe')
+
+    fekoY = fmt.FEKO('PAPER_beams/PAPER_FF_Y.ffe')
+
+    thetaF = np.radians(fekoX.fields[0].theta)
+    phiF = np.radians(fekoX.fields[0].phi)
+
+    nfreq = 11
+    npixF = thetaF.shape[0]
+    nthetaF = 91
+    nphiF = 73
+
+    ttF = thetaF.reshape(nthetaF,nphiF, order='F')
+    ppF = phiF.reshape(nthetaF,nphiF, order='F')
+
+    jonesFnodes = np.zeros((nfreq,npixF,2,2), dtype='complex128')
+
+    tv = ttF[:,0]
+    pv = ppF[0,:]
+
+    jonesFnodes = np.zeros((nfreq,npixF,2,2), dtype='complex128')
+
+    tx,ty,px,py = [np.zeros((nfreq,npixF), dtype='complex128') for x in range(4)]
+
+    for f in range(nfreq):
+        tx[f] = fekoX.fields[f].etheta
+        px[f] = fekoX.fields[f].ephi
+
+        ty[f] = fekoY.fields[f].etheta
+        py[f] = fekoY.fields[f].ephi
+
+    Ibeam = (tx*tx.conj() + px*px.conj() + ty*ty.conj() + py*py.conj()).real/2.
+    norm_factor = np.outer(np.sqrt(np.amax(Ibeam,axis=1)), np.ones(npixF))
+
+    cosp = np.outer(np.ones(nfreq), np.cos(phiF))
+    sinp = np.outer(np.ones(nfreq), np.sin(phiF))
+
+    jonesFnodes[:,:,0,0] = cosp * tx - sinp * px
+    jonesFnodes[:,:,0,1] = sinp * tx + cosp * px
+    jonesFnodes[:,:,1,0] = cosp * ty - sinp * py
+    jonesFnodes[:,:,1,1] = sinp * ty + cosp * py
+
+    # jonesFnodes[:,:,0,0] = tx
+    # jonesFnodes[:,:,0,1] = px
+    # jonesFnodes[:,:,1,0] = ty
+    # jonesFnodes[:,:,1,1] = py
+
+    for i in range(2):
+        for j in range(2):
+            jonesFnodes[:,:,i,j] /= norm_factor
+
+    jonesFimage = np.zeros((nfreq,nthetaF,nphiF,2,2), dtype='complex128')
+    for f in range(nfreq):
+        for i in range(2):
+            for j in range(2):
+                jonesFimage[f,:,:,i,j] = jonesFnodes[f,:,i,j].reshape(nthetaF,nphiF, order='F')
+
+    jre = np.real(jonesFimage)
+    jim = np.imag(jonesFimage)
+
+    nside = 16
+    npix = hp.nside2npix(nside)
+    hpxidx = np.arange(npix)
+    cza, ra = hp.pix2ang(nside, hpxidx)
+
+    jones_hpx = np.zeros((nfreq,npix,2,2), dtype='complex128')
+
+    for f in range(11):
+        for i in range(2):
+            for j in range(2):
+                jre_interpolant = interpolate.interp2d(pv,tv,jre[f,:,:,i,j],kind='cubic',fill_value=0.)
+                jim_interpolant = interpolate.interp2d(pv,tv,jim[f,:,:,i,j],kind='cubic',fill_value=0.)
+
+                jrehp = np.zeros(npix)
+                jimhp = np.zeros(npix)
+                for p in range(npix):
+                    jrehp[p] = jre_interpolant(ra[p],cza[p])
+                    jimhp[p] = jim_interpolant(ra[p],cza[p])
+
+                jones_hpx[f,:,i,j] = jrehp - 1j*jimhp
+
+    freqs = np.linspace(100.,200.,11,endpoint=True)
+    nfreq_in = len(freqs)
+    npix = jones_hpx.shape[1]
+
+    jflat = np.zeros((nfreq_in,npix,8), dtype='float64')
+    for f in range(nfreq_in):
+        jflat[f] = zt.flatten_jones(jones_hpx[f])
+
+    lmax = 3 * nside -1
+    nlm = hp.Alm.getsize(lmax)
+    joneslm = np.zeros((nfreq_in, nlm, 8), dtype='complex128')
+
+    sht = lambda x: hp.map2alm(x, lmax=lmax)
+
+    for f in range(nfreq_in):
+        joneslm[f] = (np.asarray(map(sht,jflat[f].T))).T
+
+    joneslm_re = joneslm.real
+    joneslm_im = joneslm.imag
+
+    interpolant_re = interpolate.interp1d(freqs,joneslm_re,kind='cubic',axis=0)
+    interpolant_im = interpolate.interp1d(freqs,joneslm_im,kind='cubic',axis=0)
+
+    freqs_out = p.nu_axis
+    nfreq_out = len(freqs_out)
+
+    joneslm_re_flat = interpolant_re(freqs_out)
+    joneslm_im_flat = interpolant_im(freqs_out)
+
+    joneslm_flat = joneslm_re_flat + 1j*joneslm_im_flat
+
+    nside2 = p.nside
+    npix2 = hp.nside2npix(nside2)
+
+    isht = lambda x: hp.alm2map(np.ascontiguousarray(x), nside2,verbose=False) # I think the contiguaty of the array comes from when the FEKO data was read in Fortran ordering
+    jones_up = np.zeros((nfreq_out,npix2,2,2), dtype='complex128')
+    for f in range(nfreq_out):
+        temp = (np.asarray(map(isht, joneslm_flat[f].T))).T
+    #     temp = np.zeros((nlm,8),dtype='complex128')
+    #     for i in range(8):
+    #         temp[:,i] = isht(joneslm_flat[f,:,i].squeeze())
+        jones_up[f] = zt.inverse_flatten_jones(temp)
+
+    theta, phi = hp.pix2ang(nside2, np.arange(npix2))
+
+    cosp = np.outer(np.ones(nfreq_out), np.cos(phi))
+    sinp = np.outer(np.ones(nfreq_out), np.sin(phi))
+
+    invRphi = np.array([
+            [cosp,sinp],
+            [-sinp,cosp]
+        ]).transpose((2,3,0,1))
+
+    xa,xb,ya,yb = [jones_up[:,:,i,j] for i in range(2) for j in range(2)]
+
+    jones_up2 = np.zeros_like(jones_up)
+
+    jones_up2[:,:,0,0] = cosp * xa + sinp * xb
+    jones_up2[:,:,0,1] = -sinp * xa + cosp * xb
+    jones_up2[:,:,1,0] = cosp * ya + sinp * yb
+    jones_up2[:,:,1,1] = -sinp * ya + cosp * yb
+
+    npix = hp.nside2npix(nside_in)
+    hpxidx = np.arange(npix)
+    cza, ra = hp.pix2ang(nside_in, hpxidx)
+
+    z0 = r_hat_cart(z0_cza, 0.)
+
+    RotAxis = np.cross(z0, np.array([0,0,1.]))
+    RotAxis /= np.sqrt(np.dot(RotAxis,RotAxis))
+    RotAngle = np.arccos(np.dot(z0, [0,0,1.]))
+
+    R_z0 = rotation_matrix(RotAxis, RotAngle)
+
+    t0, p0 = rotate_sphr_coords(R_z0, cza, ra)
+
+    hm = np.zeros(npix)
+    hm[np.where(cza < (np.pi / 2. + np.pi / 20.))] = 1
+
+    Jdata = np.zerso((p.nfreq,p.npix,2,2), dtype='complex128')
+
+    for f in range(p.nfreq):
+        J_f = flatten_jones(jones_up2[f])
+
+        J_f *= np.tile(hm, 8).reshape(8, npix).transpose(1,0)
+
+        J_f = rotate_jones(J_f, R_z0, multiway=False)
+
+        J_f = inverse_flatten_jones(J_f)
+
+        J_f = transform_basis(p.nside, J_f, z0_cza, R_z0)
+
+        Jdata[i,:,:,:] = J_f
+
+    return Jdata
+
+
+
+def old_PAPER_instrument_setup(z0_cza):
     # hack hack hack
     import sys
     sys.path.append('PAPER_beams/') # make this whatever it needs to be so that fmt can be imported
