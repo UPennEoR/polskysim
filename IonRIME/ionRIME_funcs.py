@@ -453,34 +453,6 @@ def PAPER_instrument_setup(param, z0_cza):
     nside2 = param.nside
     npix2 = hp.nside2npix(nside2)
 
-    isht = lambda x: hp.alm2map(np.ascontiguousarray(x), nside2,verbose=False) # I think the contiguaty of the array comes from when the FEKO data was read in Fortran ordering
-    jones_up = np.zeros((nfreq_out,npix2,2,2), dtype='complex128')
-    for f in range(nfreq_out):
-        temp = (np.asarray(map(isht, joneslm_flat[f].T))).T
-    #     temp = np.zeros((nlm,8),dtype='complex128')
-    #     for i in range(8):
-    #         temp[:,i] = isht(joneslm_flat[f,:,i].squeeze())
-        jones_up[f] = inverse_flatten_jones(temp)
-
-    theta, phi = hp.pix2ang(nside2, np.arange(npix2))
-
-    cosp = np.outer(np.ones(nfreq_out), np.cos(phi))
-    sinp = np.outer(np.ones(nfreq_out), np.sin(phi))
-
-    invRphi = np.array([
-            [cosp,sinp],
-            [-sinp,cosp]
-        ]).transpose((2,3,0,1))
-
-    xa,xb,ya,yb = [jones_up[:,:,i,j] for i in range(2) for j in range(2)]
-
-    jones_up2 = np.zeros_like(jones_up)
-
-    jones_up2[:,:,0,0] = cosp * xa + sinp * xb
-    jones_up2[:,:,0,1] = -sinp * xa + cosp * xb
-    jones_up2[:,:,1,0] = cosp * ya + sinp * yb
-    jones_up2[:,:,1,1] = -sinp * ya + cosp * yb
-
     hpxidx = np.arange(npix2)
     cza, ra = hp.pix2ang(nside2, hpxidx)
 
@@ -492,25 +464,53 @@ def PAPER_instrument_setup(param, z0_cza):
 
     R_z0 = rotation_matrix(RotAxis, RotAngle)
 
-    t0, p0 = rotate_sphr_coords(R_z0, cza, ra)
-
     hm = np.zeros(npix2)
     hm[np.where(cza < (np.pi / 2. + np.pi / 20.))] = 1
+
+    isht = lambda x: hp.alm2map(np.ascontiguousarray(x), nside2,verbose=False) # I think the contiguaty of the array comes from when the FEKO data was read in Fortran ordering
+    jones_up = np.zeros((nfreq_out,npix2,2,2), dtype='complex128')
+    for f in range(nfreq_out):
+        temp = (np.asarray(map(isht, joneslm_flat[f].T))).T
+        temp *= np.tile(hm, 8).reshape(8, npix2).transpose(1,0)
+        temp = rotate_jones(temp, R_z0, multiway=False)
+        jones_up[f] = inverse_flatten_jones(temp)
+
+
+
+    theta, phi = rotate_sphr_coords(R_z0, cza, ra)
+
+    cosp = np.outer(np.ones(nfreq_out), np.cos(phi))
+    sinp = np.outer(np.ones(nfreq_out), np.sin(phi))
+
+    # invRphi = np.array([
+    #         [cosp,sinp],
+    #         [-sinp,cosp]
+    #     ]).transpose((2,3,0,1))
+
+    xa,xb,ya,yb = [jones_up[:,:,i,j] for i in range(2) for j in range(2)]
+
+    jones_up2 = np.zeros_like(jones_up)
+
+    jones_up2[:,:,0,0] = cosp * xa + sinp * xb
+    jones_up2[:,:,0,1] = -sinp * xa + cosp * xb
+    jones_up2[:,:,1,0] = cosp * ya + sinp * yb
+    jones_up2[:,:,1,1] = -sinp * ya + cosp * yb
+
 
     Jdata = np.zeros((param.nfreq,param.npix,2,2), dtype='complex128')
 
     for f in range(param.nfreq):
-        J_f = flatten_jones(jones_up2[f])
+        # J_f = flatten_jones(jones_up2[f])
 
-        J_f *= np.tile(hm, 8).reshape(8, npix2).transpose(1,0)
+        # J_f *= np.tile(hm, 8).reshape(8, npix2).transpose(1,0)
 
-        J_f = rotate_jones(J_f, R_z0, multiway=False)
+        # J_f = rotate_jones(J_f, R_z0, multiway=False)
 
-        J_f = inverse_flatten_jones(J_f)
+        # J_f = inverse_flatten_jones(J_f)
 
-        J_f = PAPER_transform_basis(param.nside, J_f, z0_cza, R_z0)
+        J_f = PAPER_transform_basis(param.nside, jones_up2[f], z0_cza, R_z0)
 
-        Jdata[i,:,:,:] = J_f
+        Jdata[f,:,:,:] = J_f
         print f
 
     return Jdata
@@ -542,6 +542,7 @@ def PAPER_transform_basis(nside, jones, z0_cza, R_z0):
     basis_rot = np.array([[cosX, sinX],[-sinX, cosX]])
     basis_rot = np.transpose(basis_rot,(2,0,1))
 
+    # return np.einsum('...ab,...bc->...ac', jones, basis_rot)
     return irnf.M(jones, basis_rot)
 
 def old_PAPER_instrument_setup(z0_cza):
