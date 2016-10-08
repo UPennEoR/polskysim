@@ -289,13 +289,45 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
+def compute_pointsource_visibility(p,d,t,ijones,ijonesH,I,src_cza,src_ra,K,Vis):
+
+    print "t is " + str(t)
+    total_angle = float(p.nhours * 15) # degrees
+    offset_angle = float(p.hour_offset * 15) # degrees
+    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) % 2.*np.pi# radians
+
+    npix = hp.nside2npix(p.nside)
+
+    RotAxis = np.array([0.,0.,1.])
+    RotAngle = -zl_ra # basicly Hour Angle with t=0
+
+    R_t = irf.rotation_matrix(RotAxis, RotAngle)
+
+    s0 = hp.ang2vec(src_cza,src_ra)
+    sf = np.einsum('...ab,...b->...b', R_t, s0)
+
+    inds_f = hp.vec2pix(p.nside, sf[:,0],sf[:,1],sf[:,2])
+
+    It = I #XXX ??
+
+    ijones_t = ijones[:,inds_f,:,:]
+    ijonesH_t = ijonesH[:,inds_f,:,:]
+    Kt = K[:,inds_f]
+
+    Ut = np.zeros((p.nfreq,It.shape[1]))
+    sky_t = np.array([
+        [It, Ut],
+        [Ut, It]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
+
+    irnf.instrRIME_integral(ijones_t, sky_t, ijonesH_t, Kt, Vis[d,t,:,:,:].squeeze())
+
 # @profile
 def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis):
 
     print "t is " + str(t)
     total_angle = float(p.nhours * 15) # degrees
     offset_angle = float(p.hour_offset * 15) # degrees
-    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) # radians
+    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) % 2*np.pi# radians
 
     npix = hp.nside2npix(p.nside)
 
@@ -304,12 +336,6 @@ def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis):
 
     mrot = np.exp(1j * m * RotAngle)
 
-    # temp = []
-    # for x in sky_alms:
-    #     temp1 = x * mrot
-    #     temp2 = alm2map(temp1, p.nside)
-    #     temp.append(temp2)
-
     temp = np.zeros((3,p.nfreq,p.npix))
     for xi,x in enumerate(sky_alms):
         for fi in range(x.shape[0]):
@@ -317,7 +343,6 @@ def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis):
             temp[xi,fi,:] = hp.alm2map(temp1, p.nside, verbose=False)
 
     It,Qt,Ut = temp[0],temp[1],temp[2]
-    # It, Qt, Ut = [alm2map(x * mrot, p.nside) for x in sky_alms]
 
     ## Ionosphere
     """
@@ -333,8 +358,6 @@ def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis):
 
         ion_cos2 = irnf.numbap_cos(2. * ionAngle) # numba can multithread a numpy ufunc, no fuss no muss!
         ion_sin2 = irnf.numbap_sin(2. * ionAngle)
-        # ion_cos2 = np.cos(2. * ionAngle)
-        # ion_sin2 = np.sin(2. * ionAngle)
 
         QUout = irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2)
         Qt = QUout.real
@@ -385,7 +408,7 @@ def main(p):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
-    if True:
+    if False:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -423,7 +446,21 @@ def main(p):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
-    I_alm, Q_alm, U_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U])
+    if True:
+        ## Point sources
+        src_ra = np.radians(np.array([120. + 90.,120. + 90.]))
+        src_dec = np.radians(np.array([0.5,0.5]))
+        src_cza = np.pi/2. - src_dec
+
+        src_idx = hp.ang2pix(p.nside, src_cza, src_ra)
+        I = np.ones((p.nfreq, len(src_idx)))
+        I *= 150. # Jy?
+        Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+
+    if p.point_source_sim == True:
+        pass
+    else:
+        I_alm, Q_alm, U_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U])
     if p.circular_pol == True:
         V_alm = map2alm(V, p.lmax)
     else:
@@ -444,21 +481,33 @@ def main(p):
 
     # Ugh, this block makes baby jesus cry. l2oop
     if p.PAPER_instrument == True:
-        freqs = [(100 + 10 * x) * 1e6 for x in range(11)]
-        p.interp_type = 'linear' # cubic splines with this data will produce seemingly unrealistic oscillatory behavior of the beam as a function of requency
         if os.path.exists('jones_save/PAPER/' + fname) == True:
             ijones = np.load('jones_save/PAPER/' + fname)
             print "Restored Jones model"
         else:
-            Jdata = irf.PAPER_instrument_setup(z0_cza)
+            ijones = irf.PAPER_instrument_setup(p, z0_cza)
+            np.save('jones_save/PAPER/' + fname, ijones)
 
             tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
+        # freqs = [(100 + 10 * x) * 1e6 for x in range(11)]
+        #
+        # p.interp_type = 'linear' # cubic splines with this data will produce seemingly unrealistic oscillatory behavior of the beam as a function of requency
+        # if os.path.exists('jones_save/PAPER/' + fname) == True:
+        #     ijones = np.load('jones_save/PAPER/' + fname)
+        #     print "Restored Jones model"
+        # else:
+        #     Jdata = irf.PAPER_instrument_setup(z0_cza)
+        #
+        #     tmark_inst = time.time()
+        #     print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
+        #
+        #     ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type)
+        #
+        #     tmark_interp = time.time()
+        #     print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
 
-            ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type)
 
-            tmark_interp = time.time()
-            print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
     else:
         if os.path.exists('jones_save/' + fname) == True:
             ijones = np.load('jones_save/' + fname)
@@ -480,7 +529,10 @@ def main(p):
     bl_eq = irf.transform_baselines(p.baselines) # get baseline vectors in equatorial coordinates
 
     l,m = hp.Alm.getlm(p.lmax)
-    sky_alms = [I_alm, Q_alm, U_alm]
+    if p.point_source_sim == True:
+        pass
+    else:
+        sky_alms = [I_alm, Q_alm, U_alm]
     if p.circular_pol == True:
         sky_alms.append(V_alm)
     # sky_list = [I,Q,U,V]
@@ -509,9 +561,6 @@ def main(p):
     # V[t,f,1,1] == V_yy[t,f]
     Vis = np.zeros(p.ndays * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
     Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
-
-    # sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='complex128')
-    # sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='float64')
 
     for d in range(p.ndays):
         if p.ionosphere == True:
@@ -551,8 +600,10 @@ def main(p):
         ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
 
         for t, h in enumerate(ionRM_index):
-
-            compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis)
+            if p.point_source_sim == True:
+                compute_pointsource_visibility(p,d,t,ijones,ijonesH,I,src_cza,src_ra,K,Vis)
+            else:
+                compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis)
 
             # print "t is " + str(t)
             # total_angle = float(p.nhours * 15) # degrees
@@ -647,7 +698,12 @@ def main(p):
     out_name = p.outname_prefix + out_name
 
     #if os.path.exists(out_name) == False:
-    np.savez('output_vis/' + out_name, Vis=Vis, baselines=p.baselines)
+    if p.PAPER_instrument == True:
+        np.savez('output_vis/PAPER/' + out_name, Vis=Vis, param_dict=p.__dict__)
+    else:
+        np.savez('output_vis/' + out_name, Vis=Vis, param_dict=p.__dict__)
+
+    # np.savez('output_vis/' + 'param_dict_' + out_name, param_dict=p.__dict__)
 
 class Parameters:
     def __init__(self, param_dict):
