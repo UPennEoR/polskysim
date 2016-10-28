@@ -179,7 +179,9 @@ def instrument_setup(z0_cza, freqs):
                 # and then the outer transpose returns the array to its original shape.
 
         J_f = irf.inverse_flatten_jones(J_f) # Change shape to (nfreq,npix,2,2), complex-valued
-        J_f = transform_basis(p.nside, J_f, z0_cza, R_z0) # right-multiply by the basis transformation matrix from RA/Dec to the Local CST basis.
+        J_f = transform_basis(p.nside, J_f, z0_cza, R_z0) # right-multiply by the basis transformation matrix from RA/CZA to the Local CST basis.
+                                                          # Note that CZA = pi/2 - Dec! So this is not quite the RA/Dec basis. But the difference
+                                                          # in the Stoke parameters between the two is only U -> -U
         Jdata[i,:,:,:] = J_f
         print i
 
@@ -270,7 +272,7 @@ def interpolate_jones_freq(J_in, freqs, multiway=True, interp_type='cubic'):
     nu0 = str(int(p.nu_axis[0] / 1e6))
     nuf = str(int(p.nu_axis[-1] / 1e6))
     fname = p.interp_type + "_" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
-    if p.PAPER_instrument == True:
+    if p.instrument == 'paper':
         np.save('jones_save/PAPER/' + fname, J_out)
     else:
         np.save('jones_save/' + fname, J_out)
@@ -289,24 +291,39 @@ def alm2map(almarr, nside):
     """
     return np.apply_along_axis(lambda alm: hp.alm2map(alm, nside, verbose=False), 1, almarr)
 
-def compute_pointsource_visibility(p,d,t,ijones,ijonesH,I,src_cza,src_ra,K,Vis):
+def compute_pointsource_visibility(p,d,t,ijones,ijonesH,sky_list,source_track,fringe_track,src_cza,src_ra,K,Vis):
+
+    if p.circular_pol == True:
+        I,Q,U,V = sky_list
+    else:
+        I,Q,U = sky_list
 
     print "t is " + str(t)
     total_angle = float(p.nhours * 15) # degrees
     offset_angle = float(p.hour_offset * 15) # degrees
-    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) % 2.*np.pi# radians
+    zl_ra = ((float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle)) % (2.*np.pi)# radians
 
     npix = hp.nside2npix(p.nside)
 
     RotAxis = np.array([0.,0.,1.])
     RotAngle = -zl_ra # basicly Hour Angle with t=0
 
-    R_t = irf.rotation_matrix(RotAxis, RotAngle)
+    # R_t = irf.rotation_matrix(RotAxis, RotAngle)
+    # s0 = hp.ang2vec(src_cza,src_ra)
+    # sf = np.einsum('...ab,...b->...b', R_t, s0)
 
-    s0 = hp.ang2vec(src_cza,src_ra)
-    sf = np.einsum('...ab,...b->...b', R_t, s0)
+    src_ra_f = src_ra + RotAngle
+    sf = hp.ang2vec(src_cza, src_ra_f)
 
-    inds_f = hp.vec2pix(p.nside, sf[:,0],sf[:,1],sf[:,2])
+    # s0 = hp.ang2vec(src_cza,src_ra)
+    # hpR_t = hp.Rotator(rot=[RotAngle])
+
+    # sf = np.array(hpR_t(s0[:,0],s0[:,1],s0[:,2])).T
+
+    if len(sf.shape) > 1:
+        inds_f = hp.vec2pix(p.nside, sf[:,0],sf[:,1],sf[:,2])
+    else:
+        inds_f = hp.vec2pix(p.nside, sf[0],sf[1],sf[2])
 
     It = I #XXX ??
 
@@ -314,10 +331,23 @@ def compute_pointsource_visibility(p,d,t,ijones,ijonesH,I,src_cza,src_ra,K,Vis):
     ijonesH_t = ijonesH[:,inds_f,:,:]
     Kt = K[:,inds_f]
 
-    Ut = np.zeros((p.nfreq,It.shape[1]))
-    sky_t = np.array([
-        [It, Ut],
-        [Ut, It]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
+    source_track[inds_f] += 1.
+    fringe_track[inds_f] = Kt[0]
+
+    if p.unpolarized == True:
+        Ut = np.zeros((p.nfreq,It.shape[-1]))
+
+        sky_t = np.array([
+            [It, Ut],
+            [Ut, It]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
+
+    else:
+        Ut = U
+        Qt = Q
+
+        sky_t = np.array([
+            [It + Qt, Ut],
+            [Ut, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
 
     irnf.instrRIME_integral(ijones_t, sky_t, ijonesH_t, Kt, Vis[d,t,:,:,:].squeeze())
 
@@ -446,10 +476,63 @@ def main(p):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
+    # if False:
+    #     I = np.zeros((p.nfreq,p.npix))
+    #     src_ra = np.radians(np.array([120. + 60.]))
+    #     src_dec = np.radians(np.array([-35.]))
+    #     src_cza = np.pi/2. - src_dec
+    #
+    #     src_idx = hp.ang2pix(p.nside, src_cza, src_ra)
+    #
+    #     nidxs = hp.get_all_neighbors()
+    #
+    #     Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+
+    if False:
+        ## unpolarized Point sources
+        # src_ra = np.radians(np.array([120.,120.]))
+        # src_dec = np.radians(np.array([-30.,-30.]))
+        src_ra = np.radians(np.array([180.])) # these must be arrays
+        src_dec = np.radians(np.array([-31.]))
+        src_cza = np.pi/2. - src_dec
+
+        src_idx = hp.ang2pix(p.nside, src_cza, src_ra)
+        I = np.ones((p.nfreq, len(src_idx)))
+        # I = np.ones(p.nfreq)
+        I *= 150. # Jy?
+        Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+
     if True:
+        ## Polarized Point sources
+        # src_ra = np.radians(np.array([120.,120.]))
+        # src_dec = np.radians(np.array([-30.,-30.]))
+        src_ra = np.radians(np.array([155.])) # these must be arrays
+        src_dec = np.radians(np.array([16.]))
+        src_cza = np.pi/2. - src_dec
+
+        src_idx = hp.ang2pix(p.nside, src_cza, src_ra)
+        I = np.ones((p.nfreq, len(src_idx)))
+        # I = np.ones(p.nfreq)
+        I *= 150. # Jy?
+        Q,U,V = [np.zeros((p.nfreq, len(src_idx))) for x in range(3)]
+
+        Q = np.zeros((p.nfreq, len(src_idx)))
+        # Q = np.ones((p.nfreq, len(src_idx)))
+        # Q *= 0.5 * I
+
+        # U = np.zeros((p.nfreq, len(src_idx)))
+        U = np.ones((p.nfreq, len(src_idx)))
+        U *=0.5 * I
+
+        V = np.zeros((p.nfreq, len(src_idx)))
+
+        if p.unpolarized == True:
+            Q,U,V = [np.zeros((p.nfreq, len(src_idx))) for x in range(3)]
+
+    if False:
         ## Point sources
-        src_ra = np.radians(np.array([120. + 90.,120. + 90.]))
-        src_dec = np.radians(np.array([0.5,0.5]))
+        src_ra = np.radians(np.array([120. + 130.,120. + 130.]))
+        src_dec = np.radians(np.array([-10.,-10.]))
         src_cza = np.pi/2. - src_dec
 
         src_idx = hp.ang2pix(p.nside, src_cza, src_ra)
@@ -461,10 +544,9 @@ def main(p):
         pass
     else:
         I_alm, Q_alm, U_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U])
-    if p.circular_pol == True:
-        V_alm = map2alm(V, p.lmax)
-    else:
-        del V
+        if p.circular_pol == True:
+            V_alm = map2alm(V, p.lmax)
+
     ## Instrument
     """
     Jdata.shape = (nfreq_in, p.npix, 2, 2)
@@ -480,7 +562,7 @@ def main(p):
     fname = p.interp_type + "_band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
 
     # Ugh, this block makes baby jesus cry. l2oop
-    if p.PAPER_instrument == True:
+    if p.instrument == 'paper':
         if os.path.exists('jones_save/PAPER/' + fname) == True:
             ijones = np.load('jones_save/PAPER/' + fname)
             print "Restored Jones model"
@@ -533,9 +615,12 @@ def main(p):
         pass
     else:
         sky_alms = [I_alm, Q_alm, U_alm]
+        if p.circular_pol == True:
+            sky_alms.append(V_alm)
+
+    sky_list = [I,Q,U]
     if p.circular_pol == True:
-        sky_alms.append(V_alm)
-    # sky_list = [I,Q,U,V]
+        sky_list.append(V)
 
     tmark_loopstart = time.time()
 
@@ -599,9 +684,12 @@ def main(p):
             ionRM_out = None
         ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
 
+        ## Debugging stuff
+        source_track = np.zeros(p.npix)
+        fringe_track = np.zeros((p.npix), dtype='complex128')
         for t, h in enumerate(ionRM_index):
             if p.point_source_sim == True:
-                compute_pointsource_visibility(p,d,t,ijones,ijonesH,I,src_cza,src_ra,K,Vis)
+                compute_pointsource_visibility(p,d,t,ijones,ijonesH,sky_list,source_track,fringe_track,src_cza,src_ra,K,Vis)
             else:
                 compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis)
 
@@ -682,27 +770,38 @@ def main(p):
 
     Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.time()
+
     print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
     print "Full run in " + str(tmark_loopstop -tmark0) + " seconds."
 
-    # output_basedir = 'output_vis/'
+    # out_name = "Vis_band" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq) + "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
+    # if p.unpolarized == True:
+    #     out_name = "unpol" + out_name
+    # if (p.unpolarized == False) and (p.ionosphere == False):
+    #     out_name = "noion" + out_name
 
-    # sim_dir_name =
-
-    out_name = "Vis_" + p.interp_type + "_band_" + str(int(p.nu_0 / 1e6)) + "-" + str(int(p.nu_f /1e6)) + "MHz_nfreq" + str(p.nfreq)+ "_ntime" + str(p.ntime) + "_nside" + str(p.nside) + ".npz"
-    if p.unpolarized == True:
-        out_name = "unpol" + out_name
-    if (p.unpolarized == False) and (p.ionosphere == False):
-        out_name = "noion" + out_name
-
-    out_name = p.outname_prefix + out_name
+    # out_name = p.outname_prefix + out_name
 
     #if os.path.exists(out_name) == False:
-    if p.PAPER_instrument == True:
-        np.savez('output_vis/PAPER/' + out_name, Vis=Vis, param_dict=p.__dict__)
-    else:
-        np.savez('output_vis/' + out_name, Vis=Vis, param_dict=p.__dict__)
 
+    out_name = "visibility.npz"
+
+    if p.instrument == 'paper':
+        out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
+    else:
+        out_dir = os.path.join(p.output_base_directory, 'HERA/', p.output_directory)
+
+    if os.path.exists(out_dir):
+        out_dir = out_dir[:-1] + "B/"
+
+    os.makedirs(out_dir)
+    from shutil import copyfile
+    copyfile('parameters.yaml', out_dir + 'parameters.yaml')
+    np.savez(out_dir + out_name, Vis=Vis, param_dict=p.__dict__)
+
+
+    np.save('debug/source_track.npy', source_track)
+    np.save('debug/fringe_track.npy', fringe_track)
     # np.savez('output_vis/' + 'param_dict_' + out_name, param_dict=p.__dict__)
 
 class Parameters:

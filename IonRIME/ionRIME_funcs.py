@@ -55,9 +55,9 @@ def rotation_matrix(axis, theta):
 
     axis = np.asarray(axis)
     theta = np.asarray(theta)
-    axis = axis/math.sqrt(np.dot(axis, axis))
-    a = math.cos(theta/2.0)
-    b, c, d = -axis*math.sin(theta/2.0)
+    axis = axis/np.sqrt(np.dot(axis, axis))
+    a = np.cos(theta/2.0)
+    b, c, d = -axis*np.sin(theta/2.0)
     aa, bb, cc, dd = a*a, b*b, c*c, d*d
     bc, ad, ac, ab, bd, cd = b*c, a*d, a*c, a*b, b*d, c*d
     return np.array([[aa+bb-cc-dd, 2*(bc+ad), 2*(bd-ac)],
@@ -516,10 +516,7 @@ def PAPER_instrument_setup(param, z0_cza):
     return Jdata
 
 def PAPER_transform_basis(nside, jones, z0_cza, R_z0):
-    """
-    At zenith in the local frame the 'x' feed is aligned with 'theta' and
-    the 'y' feed is aligned with 'phi'
-    """
+
     npix = hp.nside2npix(nside)
     hpxidx = np.arange(npix)
     cza, ra = hp.pix2ang(nside, hpxidx)
