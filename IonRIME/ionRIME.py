@@ -439,7 +439,7 @@ def main(p):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
-    if True:
+    if False:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -452,6 +452,22 @@ def main(p):
             Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
+
+    if True:
+        if (p.nside != 128) or (p.nfreq != 201): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
+
+        import h5py
+
+        fpath = '/data4/paper/zionos/cora_maps/cora_polforeground2_nside128_nfreq201_band100_200.h5'
+        print 'Using ' + fpath
+        data = h5py.File(fpath)
+        if p.unpolarized == True:
+            I,_,_,_ = [data['map'][:,i,:] for i in [0,1,2,3]]
+            Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+            I = np.abs(I)
+        else:
+            I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
+            I = np.abs(I)
 
     if False:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
@@ -582,6 +598,17 @@ def main(p):
             ijones = hhis.make_ijones_spectrum(p, verbose=True)
             np.save('jones_save/HERA_HFSS/' + fname, ijones)
 
+            tmark_inst = time.time()
+            print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
+
+    elif p.instrument == 'paper_hfss':
+        if os.path.exists('jones_save/PAPER_HFSS/' + fname) == True:
+            ijones = np.load('jones_save/PAPER_HFSS/' + fname)
+            print "Restored Jones model"
+        else:
+            ### NOT YET IMPLEMENTED
+            ijones = phis.make_ijones_spectrum(p, verbose=True)
+            np.save('jones_save/PAPER_HFSS/' + fname, ijones)
 
             tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
@@ -600,6 +627,7 @@ def main(p):
 
             tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
+
     else:
         raise ValueError('Instrument parameter is not a valid option.')
 

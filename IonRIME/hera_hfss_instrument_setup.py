@@ -163,7 +163,7 @@ def make_jones(freq):
     ## of the zenith singularity in the ra/cza basis.
     npix = hp.nside2npix(nside)
     hpxidx = np.arange(npix)
-    tb,pb = hp.pix2ang(nside,hpxidx)
+    t,p = hp.pix2ang(nside,hpxidx)
 
     g1 = ecomp(csvname(freq,'G','X'),csvname(freq,'P','X'))
     g2 = ecomp(csvname(freq,'G','Y'),csvname(freq,'P','Y'))
