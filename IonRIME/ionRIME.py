@@ -6,6 +6,7 @@ import ionRIME_funcs as irf
 import sys
 import time
 import numba_funcs as irnf
+import hera_hfss_instrument_setup as hhis
 import radiono
 
 import astropy.coordinates as coord
@@ -438,7 +439,7 @@ def main(p):
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
 
-    if False:
+    if True:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
@@ -502,7 +503,7 @@ def main(p):
         I *= 150. # Jy?
         Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
 
-    if True:
+    if False:
         ## Polarized Point sources
         # src_ra = np.radians(np.array([120.,120.]))
         # src_dec = np.radians(np.array([-30.,-30.]))
@@ -559,10 +560,10 @@ def main(p):
 
     nu0 = str(int(p.nu_axis[0] / 1e6))
     nuf = str(int(p.nu_axis[-1] / 1e6))
-    fname = p.interp_type + "_band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
+    fname = "ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
 
     # Ugh, this block makes baby jesus cry. l2oop
-    if p.instrument == 'paper':
+    if p.instrument == 'paper_feko':
         if os.path.exists('jones_save/PAPER/' + fname) == True:
             ijones = np.load('jones_save/PAPER/' + fname)
             print "Restored Jones model"
@@ -572,25 +573,20 @@ def main(p):
 
             tmark_inst = time.time()
             print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
-        # freqs = [(100 + 10 * x) * 1e6 for x in range(11)]
-        #
-        # p.interp_type = 'linear' # cubic splines with this data will produce seemingly unrealistic oscillatory behavior of the beam as a function of requency
-        # if os.path.exists('jones_save/PAPER/' + fname) == True:
-        #     ijones = np.load('jones_save/PAPER/' + fname)
-        #     print "Restored Jones model"
-        # else:
-        #     Jdata = irf.PAPER_instrument_setup(z0_cza)
-        #
-        #     tmark_inst = time.time()
-        #     print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
-        #
-        #     ijones = interpolate_jones_freq(Jdata, freqs, interp_type=p.interp_type)
-        #
-        #     tmark_interp = time.time()
-        #     print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
+
+    elif p.instrument == 'hera_hfss':
+        if os.path.exists('jones_save/HERA_HFSS/' + fname) == True:
+            ijones = np.load('jones_save/HERA_HFSS/' + fname)
+            print "Restored Jones model"
+        else:
+            ijones = hhis.make_ijones_spectrum(p, verbose=True)
+            np.save('jones_save/HERA_HFSS/' + fname, ijones)
 
 
-    else:
+            tmark_inst = time.time()
+            print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
+
+    elif p.instrument == 'hera':
         if os.path.exists('jones_save/' + fname) == True:
             ijones = np.load('jones_save/' + fname)
             print "Restored Jones model"
@@ -604,6 +600,8 @@ def main(p):
 
             tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
+    else:
+        raise ValueError('Instrument parameter is not a valid option.')
 
     ijonesH = np.transpose(ijones.conj(),(0,1,3,2))
 
