@@ -6,7 +6,6 @@ import ionRIME_funcs as irf
 import sys
 import time
 import numba_funcs as irnf
-import hera_hfss_instrument_setup as hhis
 import radiono
 
 import astropy.coordinates as coord
@@ -469,6 +468,39 @@ def main(p):
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
             I = np.abs(I)
 
+
+    if False:
+        if (p.nside != 256) or (p.nfreq != 201): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
+
+        import h5py
+
+        fpath = '/data4/paper/zionos/cora_maps/cora_polforeground3_nside256_nfreq201_band100_200.h5'
+        print 'Using ' + fpath
+        data = h5py.File(fpath)
+        if p.unpolarized == True:
+            I,_,_,_ = [data['map'][:,i,:] for i in [0,1,2,3]]
+            Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+            I = np.abs(I)
+        else:
+            I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
+            I = np.abs(I)
+
+    if False:
+        if (p.nside != 128) or (p.nfreq != 201): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
+
+        import h5py
+
+        fpath = '/data4/paper/zionos/cora_maps/cora_21cm1_nside128_nfreq201_band100_200.h5'
+        print 'Using ' + fpath
+        data = h5py.File(fpath)
+        if p.unpolarized == True:
+            I,_,_,_ = [data['map'][:,i,:] for i in [0,1,2,3]]
+            Q,U,V = [np.zeros((p.nfreq, npix)) for x in range(3)]
+            I = np.abs(I)
+        else:
+            I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
+            I = np.abs(I)
+
     if False:
         if (p.nside != 128) or (p.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
@@ -560,6 +592,7 @@ def main(p):
     if p.point_source_sim == True:
         pass
     else:
+        nside_use = hp.npix2nside(I.shape[1])
         I_alm, Q_alm, U_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U])
         if p.circular_pol == True:
             V_alm = map2alm(V, p.lmax)
@@ -595,6 +628,7 @@ def main(p):
             ijones = np.load('jones_save/HERA_HFSS/' + fname)
             print "Restored Jones model"
         else:
+            import hera_hfss_instrument_setup as hhis
             ijones = hhis.make_ijones_spectrum(p, verbose=True)
             np.save('jones_save/HERA_HFSS/' + fname, ijones)
 
@@ -606,7 +640,7 @@ def main(p):
             ijones = np.load('jones_save/PAPER_HFSS/' + fname)
             print "Restored Jones model"
         else:
-            ### NOT YET IMPLEMENTED
+            import paper_hfss_instrument_setup as phis
             ijones = phis.make_ijones_spectrum(p, verbose=True)
             np.save('jones_save/PAPER_HFSS/' + fname, ijones)
 
