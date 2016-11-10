@@ -745,88 +745,15 @@ def main(p):
         ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
 
         ## Debugging stuff
-        source_track = np.zeros(p.npix)
-        fringe_track = np.zeros((p.npix), dtype='complex128')
+        if debug == True and p.point_source_sim == True:
+            source_track = np.zeros(p.npix)
+            fringe_track = np.zeros((p.npix), dtype='complex128')
+
         for t, h in enumerate(ionRM_index):
             if p.point_source_sim == True:
                 compute_pointsource_visibility(p,d,t,ijones,ijonesH,sky_list,source_track,fringe_track,src_cza,src_ra,K,Vis)
             else:
                 compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis)
-
-            # print "t is " + str(t)
-            # total_angle = float(p.nhours * 15) # degrees
-            # offset_angle = float(p.hour_offset * 15) # degrees
-            # zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) # radians
-            #
-            # npix = hp.nside2npix(p.nside)
-            #
-            # RotAxis = np.array([0.,0.,1.])
-            # RotAngle = -zl_ra # basicly Hour Angle with t=0
-            #
-            # mrot = np.exp(1j * m * RotAngle)
-            # It, Qt, Ut = [alm2map(x * mrot, p.nside) for x in sky_alms]
-            #
-            # ## Ionosphere
-            # """
-            # ionRM.shape = (p.nhours, p.nfreq, p.npix)
-            # ionRM_t.shape = (p.nfreq,p.npix)
-            # """
-            # if p.ionosphere == True:
-            #     ionRM_t = ionRM_out[h] # pick out the map corresponding to this hour
-            #
-            #     lbda2 = (c / p.nu_axis)**2.
-            #     ionAngle = np.outer(lbda2, np.ones(p.npix)) * ionRM_t
-            #
-            #     ion_cos2 = np.cos(2. * ionAngle)
-            #     ion_sin2 = np.sin(2. * ionAngle)
-            #
-            #     QUout = irnf.complex_rotation(Qt,Ut, ion_cos2, ion_sin2)
-            #     Qt = QUout.real
-            #     Ut = QUout.imag
-            #
-            #     # if (t in [0,1,2,3,4,5]):
-            #     #     print "Checking Q and U"
-            #     #     print "Q above zero: ", len(np.where(abs(Qt) > 1e-5)[0])
-            #     #     print "U above zero: ", len(np.where(abs(Ut) > 1e-5)[0])
-            #
-            #
-            # # sky_t = np.array([
-            # #     [It + Qt, Ut],
-            # #     [Ut, It - Qt]]).transpose(2,3,0,1) # sky_t.shape = (p.nfreq, p.npix, 2, 2)
-            #
-            # sky_t[:,:,0,0] = It + Qt
-            # sky_t[:,:,0,1] = Ut
-            # sky_t[:,:,1,0] = Ut
-            # sky_t[:,:,1,1] = It - Qt
-            #
-            # irnf.instrRIME_integral(ijones, sky_t, ijonesH, K, Vis[d,t,:,:,:].squeeze())
-
-            ##############
-
-            # sky_t = np.zeros((p.nfreq,p.npix,2,2), dtype='complex128')
-            # sky_t[:,:,0,0] = It + Qt
-            # sky_t[:,:,0,1] = Ut
-            # sky_t[:,:,1,0] = Ut
-            # sky_t[:,:,1,1] = It - Qt
-
-
-
-
-            ###### OLD ############
-            # ion_cos = np.ones((p.nfreq, npix))
-            # ion_sin = np.zeros((p.nfreq, npix))
-
-            # ion_rot = np.array([[ion_cos, ion_sin],[-ion_sin,ion_cos]])
-            # ion_rot = np.transpose(ion_rot,(2,3,0,1))
-            # ion_rotT = np.transpose(ion_rot,(0,1,3,2))
-            # worried abou this...is the last line producing the right ordering,
-            # or is ion_rot unchanged
-
-            # C = np.zeros_like(sky_t)
-            # irnf.jones_chain(ijones, ion_rot, sky_t, ion_rotT, ijonesH, C)
-            # irnf._RIME_integral(C, K, Vis[b_i,t,:,:,:].squeeze())
-
-            # irnf.RIME_integral(ijones, ion_rot, sky_t, ion_rotT, ijonesH, K, Vis[d,t,:,:,:].squeeze())
 
     Vis /= hp.nside2npix(p.nside) # normalization
     tmark_loopstop = time.time()
@@ -846,22 +773,11 @@ def main(p):
 
     out_name = "visibility.npz"
 
-    if p.instrument == 'paper':
-        out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
-    else:
-        out_dir = os.path.join(p.output_base_directory, 'HERA/', p.output_directory)
+    np.savez(p.out_dir_use + out_name, Vis=Vis, param_dict=p.__dict__)
 
-    if os.path.exists(out_dir):
-        out_dir = out_dir[:-1] + "B/"
-
-    os.makedirs(out_dir)
-    from shutil import copyfile
-    copyfile('parameters.yaml', out_dir + 'parameters.yaml')
-    np.savez(out_dir + out_name, Vis=Vis, param_dict=p.__dict__)
-
-
-    np.save('debug/source_track.npy', source_track)
-    np.save('debug/fringe_track.npy', fringe_track)
+    if debug == True and p.point_source_sim == True:
+        np.save('debug/source_track.npy', source_track)
+        np.save('debug/fringe_track.npy', fringe_track)
     # np.savez('output_vis/' + 'param_dict_' + out_name, param_dict=p.__dict__)
 
 class Parameters:
@@ -870,50 +786,6 @@ class Parameters:
             setattr(self, key, param_dict[key])
 
 if __name__ == '__main__':
-
-    #########
-    # Dimensions and Boundaries
-
-    # global p
-    # p = Parameters()
-    #
-    # p.nside = 2**7 # sets the spatial resolution of the simulation, for a given baseline
-    #
-    # p.npix = hp.nside2npix(p.nside)
-    #
-    # p.lmax = 3 * p.nside - 1
-    #
-    # p.nfreq = 241 # the number of frequency channels at which visibilities will be computed.
-    #
-    # p.ntime = 96  # the number of time samples in one rotation of the earch that will be computed
-    #
-    # p.ndays = 2 # The number of days that will be simulated.
-    #
-    # p.day0 = (2012, 1, 1) # a tuple of ints corresponding to  (year, month, day)
-    #
-    # p.nhours = 8
-    #
-    # p.hour_offset = 8
-    #
-    # p.nu_0 = 1.4e8 # Hz. The high end of the simulated frequency band.
-    #
-    # p.nu_f = 1.7e8 # Hz. The low end of the simulated frequency band.
-    #
-    # p.nu_axis = np.linspace(p.nu_0,p.nu_f,num=p.nfreq,endpoint=True)
-    #
-    # p.baselines = [[7.,14.,0]]
-    #
-    # p.nbaseline = len(p.baselines)
-    #
-    # p.interp_type = 'cubic'
-    # # options for interpolation are:
-    # # 'linear' and 'cubic', both via scipy.interpolate.interp1d()
-    #
-    # p.PAPER_instrument = False # hack hack hack
-    #
-    # p.unpolarized = False
-    #
-    # p.ionosphere = True
 
     yamlfile = file('parameters.yaml', 'r')
     param_dict = yaml.load(yamlfile)
@@ -931,6 +803,20 @@ if __name__ == '__main__':
     print p.interp_type
     if (p.unpolarized == True) and (p.ionosphere == True):
         raise Exception('Simulation includes the ionosphere with an unpolarized sky! Dummy!')
+
+    if p.instrument == 'paper':
+        out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
+    else:
+        out_dir = os.path.join(p.output_base_directory, 'HERA/', p.output_directory)
+
+    while os.path.exists(out_dir):
+        out_dir = out_dir[:-1] + "B/"
+
+    p.out_dir_use = out_dir
+
+    os.makedirs(p.out_dir_use)
+    from shutil import copyfile
+    copyfile('parameters.yaml', p.out_dir_use + 'parameters.yaml')
 
     global debug
     debug = False

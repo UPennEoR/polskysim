@@ -353,6 +353,31 @@ def udgrade_jones(jones, nside_out):
 def jones_f(nu_node, nside):
     return udgrade_jones(jones2celestial_basis(make_jones(nu_node)), nside)
 
+def horizon_mask(jones, z0_cza):
+    npix = jones.shape[0]
+    nside = hp.npix2nside(npix)
+    hpxidx = np.arange(npix)
+    cza, ra = hp.pix2ang(nside, hpxidx)
+
+    if z0_cza == 0.:
+        tb, pb = cza, ra
+    else:
+
+        z0 = irf.r_hat_cart(z0_cza, 0.)
+
+        RotAxis = np.cross(z0, np.array([0,0,1.]))
+        RotAxis /= np.sqrt(np.dot(RotAxis,RotAxis))
+        RotAngle = np.arccos(np.dot(z0, [0,0,1.]))
+
+        R_z0 = irf.rotation_matrix(RotAxis, RotAngle)
+
+        tb, pb = irf.rotate_sphr_coords(R_z0, cza, ra)
+
+    hm = np.zeros((npix,2,2))
+    hm[np.where(tb < np.pi/2.)] = 1.
+
+    return hm
+
 def make_ijones_spectrum(p, verbose=False):
     """
     nu_axis: frequency in Hz
@@ -406,16 +431,29 @@ def make_ijones_spectrum(p, verbose=False):
 
     freqs_out = p.nu_axis/1e6
 
-    joneslm_re = interpolant_re(freqs_out)
-    joneslm_im = interpolant_im(freqs_out)
+    joneslm_re_int = interpolant_re(freqs_out)
+    joneslm_im_int = interpolant_im(freqs_out)
+
+    joneslm_int = joneslm_re_int + 1j*joneslm_im_int
 
     # now we just need to resynthesize at each frequency and we're done
     isht = lambda x: hp.alm2map(np.ascontiguousarray(x), p.nside,verbose=False)
+
+    z0_cza = np.radians(120.7215)
 
     ijones = np.zeros((p.nfreq,p.npix,2,2), dtype=np.complex128)
     for n in range(p.nfreq):
         for i in range(2):
             for j in range(2):
-                ijones[n,:,i,j] = isht(joneslm_re[n,:,i,j,0] + 1j*joneslm_im[n,:,i,j,1])
+                ijones[n,:,i,j] = isht(joneslm_int[n,:,i,j,0]) + 1j*isht(joneslm_int[n,:,i,j,1])
+
+        If = abs(ijones[n,:,0,0])**2. + abs(ijones[n,:,0,1])**2. + abs(ijones[n,:,0,1])**2. + abs(ijones[n,:,1,0])**2
+        norm = np.sqrt(np.amax(If))
+        ijones[n] /= norm
+
+        ijones[n] *= horizon_mask(ijones[n].squeeze(), z0_cza)
+
+        if verbose == True:
+            print "norm is:", norm
 
     return ijones
