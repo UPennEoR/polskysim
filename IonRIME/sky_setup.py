@@ -4,6 +4,8 @@ import astropy.coordinates as coord
 import astropy.units as units
 from astropy.time import Time
 import ionRIME_funcs as irf
+import os
+import sys
 
 class SkyConstructor(object):
     def __init__(self, params):
@@ -31,14 +33,49 @@ class SkyConstructor(object):
             'skyH': self.skyH,
             'skyI': self.skyI,
             'skyJ': self.skyJ,
-            'skyK': self.skyK
+            'skyK': self.skyK,
+            'skyL': self.skyL,
+            'skyM': self.skyM
         }
 
         return skyGenerators
 
+    def skyM(self):
+
+        file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac005/'
+
+        I = np.load(file_dir + 'I_use.npy')
+        if self.p.unpolarized == False:
+            Q = np.load(file_dir + 'Q_use.npy')
+            U = np.load(file_dir + 'U_use.npy')
+        else:
+            Q = np.zeros_like(I)
+            U = np.zeros_like(I)
+
+        V = np.zeros_like(I)
+
+        return I,Q,U,V
+
+    def skyL(self):
+
+        file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac05/'
+
+        I = np.load(file_dir + 'I_use.npy')
+        if self.p.unpolarized == False:
+            Q = np.load(file_dir + 'Q_use.npy')
+            U = np.load(file_dir + 'U_use.npy')
+        else:
+            Q = np.zeros_like(I)
+            U = np.zeros_like(I)
+
+        V = np.zeros_like(I)
+
+        return I,Q,U,V
+
     def skyK(self):
         pfrac = 0.5
-        I = get_gsm_cube(p)
+        I = get_gsm_cube(self.p)
+
 
     def skyA(self):
         I = get_gsm_cube()
@@ -128,7 +165,7 @@ class SkyConstructor(object):
         data = h5py.File(fpath)
         if self.p.unpolarized == True:
             I,_,_,_ = [data['map'][:,i,:] for i in [0,1,2,3]]
-            Q,U,V = [np.zeros((self.p.nfreq, npix)) for x in range(3)]
+            Q,U,V = [np.zeros((self.p.nfreq, self.p.npix)) for x in range(3)]
             I = np.abs(I)
         else:
             I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]

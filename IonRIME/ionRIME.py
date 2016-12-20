@@ -367,7 +367,7 @@ def main(p):
     """
     sky.shape = (p.nfreq, npix, 2,2)
     """
-    
+
     sky_init = SkyConstructor(p)
     I,Q,U,V = sky_init.stokes_parameters
 
@@ -489,39 +489,49 @@ def main(p):
     Vis = np.zeros(p.ndays * p.ntime * p.nfreq * 2 * 2, dtype='complex128')
     Vis = Vis.reshape(p.ndays, p.ntime, p.nfreq, 2, 2)
 
+    p.RMs = []
+
     for d in range(p.ndays):
         if p.ionosphere == True:
-            time_str = [irf.get_time_string(d, p.day0)] # the time string needed by radiono
-            print "d is " + str(d) + ", day is " + time_str[0]
+            if p.ionosphere_type == 'radionopy':
+                time_str = [irf.get_time_string(d, p.day0)] # the time string needed by radiono
+                print "d is " + str(d) + ", day is " + time_str[0]
 
-            heraRM = radiono.rm.HERA_RM(time_str)
-            heraRM.make_radec_RM_maps()
+                heraRM = radiono.rm.HERA_RM(time_str)
+                heraRM.make_radec_RM_maps()
 
-            c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_str[0] + 'T00:00:00', format='isot'), location=heraRM.location)
+                c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_str[0] + 'T00:00:00', format='isot'), location=heraRM.location)
 
-            c_local_Zeq = c_local.transform_to(coord.ICRS)
-            z0_ra = c_local_Zeq.ra.radian
+                c_local_Zeq = c_local.transform_to(coord.ICRS)
+                z0_ra = c_local_Zeq.ra.radian
 
-            hour0 = int(np.ceil(np.degrees(z0_ra/15.)))
+                hour0 = int(np.ceil(np.degrees(z0_ra/15.)))
 
-            # the time axis on RMs starts at local midnight, by definition of the altaz<->radec transformation in radionopy
-            # but my time loop does not start at local midnight, it starts t=0 when local zenith is at ra=0
-            # the local time is hour0 ~= 11 hours after midnight at that point.
-            # so the first RM map that should be seen is RM[hour0-1, :]
+                # the time axis on RMs starts at local midnight, by definition of the altaz<->radec transformation in radionopy
+                # but my time loop does not start at local midnight, it starts t=0 when local zenith is at ra=0
+                # the local time is hour0 ~= 11 hours after midnight at that point.
+                # so the first RM map that should be seen is RM[hour0-1, :]
 
 
-            # hour_inds = [(hour0 + p.hour_offset + x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
-            hour_axis = [hour0 + x % 24 for x in range(p.nhours)]
+                # hour_inds = [(hour0 + p.hour_offset + x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
+                hour_axis = [hour0 + x % 24 for x in range(p.nhours)]
 
-            # if we aren't going to use all 24 hours of RM data, we don't want to be rotating and
-            # resampling all 24 hours, just the hours that will be used
+                # if we aren't going to use all 24 hours of RM data, we don't want to be rotating and
+                # resampling all 24 hours, just the hours that will be used
 
-            ionRM_out = np.zeros((p.nhours, p.npix))
-            for i, hr in enumerate(hour_axis):
-                hrAngle = -z0_ra - np.radians(hr * 15.) # did i need to add the hour offset here? fuck
-                lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
-                mh_rot = np.exp(1j * mh * hrAngle)
-                ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
+                ionRM_out = np.zeros((p.nhours, p.npix))
+                for i, hr in enumerate(hour_axis):
+                    hrAngle = -z0_ra - np.radians(hr * 15.) # did i need to add the hour offset here? fuck
+                    lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
+                    mh_rot = np.exp(1j * mh * hrAngle)
+                    ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
+
+            elif p.ionosphere_type == 'constant':
+                print "d is " + str(d)
+                ionRM_out = np.ones((p.nhours, p.npix))
+                p.RMs.append(np.random.rand(1)[0] * 2. * np.pi)
+                ionRM_out *= p.RMs[d]
+
         else:
             ionRM_out = None
         ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
@@ -587,6 +597,8 @@ if __name__ == '__main__':
         raise Exception('Simulation includes the ionosphere with an unpolarized sky! Dummy!')
 
     if p.instrument == 'paper':
+        out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
+    elif p.instrument == 'paper_hfss':
         out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
     else:
         out_dir = os.path.join(p.output_base_directory, 'HERA/', p.output_directory)
