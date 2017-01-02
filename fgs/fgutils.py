@@ -1,5 +1,5 @@
 import numpy as np, healpy as hp, os, sys, optparse, pyfits
-from matplotlib import pylab
+# import matplotlib.pyplot as plt
 from datetime import datetime as datetime
 """
 Making maps from angular power spectra
@@ -124,7 +124,7 @@ def mk_map_gsm2016_mod(freqs, nside_out):
 
     return I
 
-def mk_fg_cube(onescale=True, pfrac=0.002, flo=100., fhi=200., nbins=203, alo=-2.7, ahi=-2.3, alpha_map=None, raw_map=None, intermediates=True, verbose=False):
+def mk_fg_cube(onescale=True, pfrac=0.002, flo=100., fhi=200., nbins=203, alo=-2.7, ahi=-2.3, alpha_map=None, raw_map=None, intermediates=True, save_cubes=True, verbose=False):
     """
     Make a Stokes IQUV cube.
 
@@ -232,14 +232,15 @@ def mk_fg_cube(onescale=True, pfrac=0.002, flo=100., fhi=200., nbins=203, alo=-2
 
     spols = ['I','Q','U','V']
     cube = [I,Qmaps,Umaps,Vmaps]
-    for i,m in enumerate(cube):
-        N = 'cube_%s_%s-%sMHz_%sbins.npz'%(spols[i],str(flo),str(fhi), str(len(nu)))
-        print '    Saving %s'%N
-        np.savez(N, maps=m)
+    if save_cubes == True:
+        for i,m in enumerate(cube):
+            N = 'cube_%s_%s-%sMHz_%sbins.npz'%(spols[i],str(flo),str(fhi), str(len(nu)))
+            print '    Saving %s'%N
+            np.savez(N, maps=m)
 
     return np.array(cube)
 
-def propOpp(cube=None,flo=100.,fhi=200.,lmax=100,npznamelist=None):
+def propOpp(cube=None,flo=100.,fhi=200.,lmax=100,npznamelist=None, save_cubes=True):
     """
     Propogate the Q and U components of an IQUV cube through
     the Oppermann et al. 2012 RM map.
@@ -267,7 +268,7 @@ def propOpp(cube=None,flo=100.,fhi=200.,lmax=100,npznamelist=None):
         raise ImplmentationError('No map information provided.')
 
     ##
-    nbins = Q.shape[1]
+    nbins = Q.shape[0]
     nu = np.linspace(flo,fhi,num=nbins)
     lam = 3e8/(nu*1e6)
     lam2 = np.power(lam,2)
@@ -285,23 +286,36 @@ def propOpp(cube=None,flo=100.,fhi=200.,lmax=100,npznamelist=None):
     RMmap=hp.smoothing(RMmap,fwhm=np.radians(1.))
 
     hp.mollview(RMmap,title='Oppermann map smoothed')
-    pylab.show()
+    plt.show()
     """
     #Downsample RM variance in alm space
     #Upsample it in pixellization
     #Is this kosher?
-    RMmap = hp.alm2map(hp.map2alm(RM,lmax=lmax),nside=512)
+    Qn, Un = [np.zeros((nbins,hp.nside2npix(128))) for i in range(2)]
+    for i in range(Q.shape[0]):
+        # print Q[:,i].shape
+        Qn[i] = hp.alm2map(hp.map2alm(Q[i],lmax=3 * 512 -1),nside=128)
+        Un[i] = hp.alm2map(hp.map2alm(U[i],lmax=3*512 - -1),nside=128)
 
-    phi = np.outer(RMmap,lam2)
-    fara_rot = (Q + 1.j*U)*np.exp(-2.j*phi) #Eq. 9 of Moore et al. 2013
-    Qmaps_rot = fara_rot.real
-    Umaps_rot = fara_rot.imag
+    RMmap = RM
+
+    # RMmap = hp.alm2map(hp.map2alm(RM,lmax=lmax),nside=512)
+    Qmaps_rot = np.zeros_like(Qn)
+    Umaps_rot = np.zeros_like(Un)
+
+    # phi = np.outer(RMmap,lam2)
+    for i in range(nbins):
+        phi = RMmap * lam2[i]
+        fara_rot = (Qn[i] + 1.j*Un[i])*np.exp(-2.j*phi) #Eq. 9 of Moore et al. 2013
+        Qmaps_rot[i] = fara_rot.real
+        Umaps_rot[i] = fara_rot.imag
 
     QU = [Qmaps_rot,Umaps_rot]
 
-    print 'Saving Q U rotated'
-    np.savez('cube_Qrot_%s-%sMHz.npz'%(str(flo),str(fhi)),maps=Qmaps_rot)
-    np.savez('cube_Urot_%s-%sMHz.npz'%(str(flo),str(fhi)),maps=Umaps_rot)
+    if save_cubes == True:
+        print 'Saving Q U rotated'
+        np.savez('cube_Qrot_%s-%sMHz.npz'%(str(flo),str(fhi)),maps=Qmaps_rot)
+        np.savez('cube_Urot_%s-%sMHz.npz'%(str(flo),str(fhi)),maps=Umaps_rot)
 
     return np.array(QU)
 """
@@ -329,4 +343,4 @@ def plot_maps(maps,titles=None):
     for i,m in enumerate(maps):
         if titles is not None: hp.mollview(m,title=titles[i],sub=(s,s,i+1))
         else: hp.mollview(m,sub=(s,s,i+1))
-    pylab.show()
+    plt.show()
