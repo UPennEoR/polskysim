@@ -111,8 +111,8 @@ plt.xlabel('Flux [Jy]')
 plt.ylabel(r'$S^{2.5} dN/dS}~[\mathrm{Jy}^{1.5} \mathrm{sr}^{-1}]$')
 plt.ylim([1e2,1e5])
 
-plt.savefig('number_counts.png',dpi=300)
-#plt.show()
+#plt.savefig('number_counts.png',dpi=300)
+plt.show()
 
 
 
