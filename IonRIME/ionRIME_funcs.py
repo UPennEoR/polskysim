@@ -332,6 +332,39 @@ def get_time_string(d, day0):
     time_str = str(date0 + d * one_day).split(' ')[0]
     return time_str
 
+def hp_pix2radec(nside, pix_inds):
+    """
+    An RA/Dec version of healpy's pix2ang() function.
+    """
+    npix = hp.nside2npix(nside)
+    map_pix_inds = np.arange(npix)
+    tm,pm = hp.pix2ang(nside, map_pix_inds)
+
+    t,p = hp.pix2ang(nside, pix_inds)
+
+    dec = np.pi/2. - t
+    pm_max = np.amax(pm)
+    ra = pm_max - p
+
+    return ra, dec
+
+def hp_pix2rh_pix2ang(nside, pix_inds):
+    """
+    A right-handed version of healpy's pix2ang() function.
+    """
+    npix = hp.nside2npix(nside)
+    map_pix_inds = np.arange(npix)
+    tm,pm = hp.pix2ang(nside, map_pix_inds)
+
+    tl,pl = hp.pix2ang(nside, pix_inds)
+
+    pm_max = np.amax(pm)
+
+    t = tl
+    p = pm_max - p
+
+    return t,p
+
 def PAPER_instrument_setup(param, z0_cza):
 
     import sys

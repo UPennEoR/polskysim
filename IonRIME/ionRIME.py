@@ -12,6 +12,11 @@ import radiono
 import astropy.coordinates as coord
 import astropy.units as units
 from astropy.time import Time
+
+import math
+import itertools
+from fractions import Fraction
+
 import yaml
 
 def transform_basis(nside, jones, z0_cza, R_z0):
@@ -311,7 +316,7 @@ def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis):
     print "t is " + str(t)
     total_angle = float(p.nhours * 15) # degrees
     offset_angle = float(p.hour_offset * 15) # degrees
-    zl_ra = (float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle) % 2*np.pi# radians
+    zl_ra = ((float(t) / float(p.ntime)) * np.radians(total_angle) + np.radians(offset_angle)) % (2*np.pi) # radians
 
     npix = hp.nside2npix(p.nside)
 
@@ -491,40 +496,69 @@ def main(p):
 
     p.RMs = []
 
+    d0 = (p.sim_part-1)*p.ndays
+    d1 = (p.sim_part-1)*p.ndays + p.ndays
+    date_strs = [irf.get_time_string(x,p.day0) for x in range(d0-1,d1+1)]
+
+    heraRM = radiono.rm.HERA_RM(date_strs)
+    heraRM.make_radec_RM_maps() # compute all the radionopy RM maps that will be used. The RM array for each day is only ~0.7 MB.
+
+    ## I think this is unneeded now?
+    # c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(date_strs[0] + 'T00:00:00', format='isot'), location=heraRM.location)
+    # # the Alt/Az coordinates of the local zenith at midnight on p.day0
+    #
+    # c_local_Zeq = c_local.transform_to(coord.ICRS)
+    # z0_ra = c_local_Zeq.ra.radian # the ra coordinate of zenith at midnight on day0
+
+    p.ra0 = np.radians(p.hour_offset * 15.) # the starting RA of the simulation window i.e. when t=0, p.ra0 is at the beam's zenith meridian
+
+    UT_hour_start_str = radiono.utils.nextTransit(date_strs[1], np.degrees(p.ra0),0.).split(' ')[1] # an extra day has been added before "day0",
+    UT_hour_start = int(UT_hour_start_str[:2]) # the UT hour of the first RM map on the first day
+
     for d in range(p.ndays):
         if p.ionosphere == True:
             if p.ionosphere_type == 'radionopy':
-                time_str = [irf.get_time_string(d, p.day0)] # the time string needed by radiono
-                print "d is " + str(d) + ", day is " + time_str[0]
+                print "d is " + str(d) + ", day is " + date_strs[d+1]
 
-                heraRM = radiono.rm.HERA_RM(time_str)
-                heraRM.make_radec_RM_maps()
+                ds = d + (p.sim_part-1)*p.ndays
 
-                c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(time_str[0] + 'T00:00:00', format='isot'), location=heraRM.location)
+                bins_per_hour = float(p.ntime)/p.nhours
+                hours_per_degree = 1./15.     # 1 deg ~= 1/15 hours
+                bins_per_degree = bins_per_hour * hours_per_degree
 
-                c_local_Zeq = c_local.transform_to(coord.ICRS)
-                z0_ra = c_local_Zeq.ra.radian
+                dec_part, _ = math.modf(bins_per_degree)
 
-                hour0 = int(np.ceil(np.degrees(z0_ra/15.)))
+                frac = Fraction(dec_part).limit_denominator(max_denominator=100)
 
-                # the time axis on RMs starts at local midnight, by definition of the altaz<->radec transformation in radionopy
-                # but my time loop does not start at local midnight, it starts t=0 when local zenith is at ra=0
-                # the local time is hour0 ~= 11 hours after midnight at that point.
-                # so the first RM map that should be seen is RM[hour0-1, :]
+                time_bin_shift = ds * int(bins_per_degree) + ds/frac.denominator
 
+                ionRM_index = [(x * p.nhours/p.ntime) + UT_hour_start + 24 for x in range(-time_bin_shift, p.ntime)] # the +24 is to shift the UTs to the middle of the heraRM_use axis
 
-                # hour_inds = [(hour0 + p.hour_offset + x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
-                hour_axis = [hour0 + x % 24 for x in range(p.nhours)]
+                ionRM_index = np.roll(ionRM_index, time_bin_shift)[-p.ntime:]
 
-                # if we aren't going to use all 24 hours of RM data, we don't want to be rotating and
-                # resampling all 24 hours, just the hours that will be used
+                UT_index = list(set(ionRM_index))
+                UT_index.sort()
 
-                ionRM_out = np.zeros((p.nhours, p.npix))
-                for i, hr in enumerate(hour_axis):
-                    hrAngle = -z0_ra - np.radians(hr * 15.) # did i need to add the hour offset here? fuck
-                    lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
-                    mh_rot = np.exp(1j * mh * hrAngle)
-                    ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM.RMs[0,hr,:], lmax=3*heraRM.nside -1) * mh_rot, p.nside, verbose=False)
+                ionRM_index = [x - min(ionRM_index) for x in ionRM_index]
+
+                ionRM_out = np.zeros((p.nhours+1, p.npix))
+                heraRM_use = np.concatenate((heraRM.RMs[d,:,:], heraRM.RMs[d+1,:,:]), axis=0) # 48 hours of RM maps, starting at midnight on day "d"
+
+                if max(UT_index) > 47:
+                    heraRM_use = np.concatenate((heraRM_use, heraRM.RMs[d+2,:,:]), axis=0)
+
+                for i, hr in enumerate(UT_index):
+                    ##OLD
+                    # hrAngle = -p.ra0 + np.radians(hr * 15.) + np.pi # approximately true?
+                    # lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
+                    # mh_rot = np.exp(1j * mh * hrAngle)
+                    # ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM_use[hr,:], lmax=3*heraRM.nside -1)* mh_rot, p.nside, verbose=False)
+
+                    RotAngle = -p.ra0 - np.radians((hr-2) * 15.)
+                    # the (hr-2) has something to do with the local time zone being UT+2.
+                    # Found that it should be (hr-2) by trial-and-error matching the radionopy altaz map...
+                    temp1 = hp.ud_grade(heraRM_use[hr,:], nside_out=p.nside)
+                    ionRM_out[i] = irf.rotate_healpix_mapHPX(temp1,[-np.degrees(RotAngle)])
 
             elif p.ionosphere_type == 'constant':
                 print "d is " + str(d)
@@ -534,7 +568,6 @@ def main(p):
 
         else:
             ionRM_out = None
-        ionRM_index = [(x * p.nhours/p.ntime) % 24 for x in range(p.ntime)]
 
         ## Debugging stuff
         if debug == True and p.point_source_sim == True:
