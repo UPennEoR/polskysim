@@ -321,7 +321,7 @@ def compute_visibility(p,d,t,h,m,ionRM_out,ijones,ijonesH,sky_alms,K,Vis):
     npix = hp.nside2npix(p.nside)
 
     RotAxis = np.array([0.,0.,1.])
-    RotAngle = -zl_ra # basicly Hour Angle with t=0
+    RotAngle = zl_ra
 
     mrot = np.exp(1j * m * RotAngle)
 
@@ -449,6 +449,12 @@ def main(p):
             tmark_interp = time.time()
             print "Completed interpolate_jones_freq(), in " + str(tmark_interp - tmark_inst)
 
+    elif p.instrument == 'analytic_dipole':
+        ijones = irf.analytic_dipole_setup(p.nside, p.nfreq, z0_cza=z0_cza)
+
+        tmark_inst = time.time()
+        print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
+
     else:
         raise ValueError('Instrument parameter is not a valid option.')
 
@@ -499,9 +505,9 @@ def main(p):
     d0 = (p.sim_part-1)*p.ndays
     d1 = (p.sim_part-1)*p.ndays + p.ndays
     date_strs = [irf.get_time_string(x,p.day0) for x in range(d0-1,d1+1)]
-
-    heraRM = radiono.rm.HERA_RM(date_strs)
-    heraRM.make_radec_RM_maps() # compute all the radionopy RM maps that will be used. The RM array for each day is only ~0.7 MB.
+    if p.ionosphere == True and p.ionosphere_type == 'radionopy':
+        heraRM = radiono.rm.HERA_RM(date_strs)
+        heraRM.make_radec_RM_maps() # compute all the radionopy RM maps that will be used. The RM array for each day is only ~0.7 MB.
 
     ## I think this is unneeded now?
     # c_local = coord.AltAz(az=0. * units.degree, alt=90. * units.degree, obstime=Time(date_strs[0] + 'T00:00:00', format='isot'), location=heraRM.location)
@@ -563,11 +569,16 @@ def main(p):
             elif p.ionosphere_type == 'constant':
                 print "d is " + str(d)
                 ionRM_out = np.ones((p.nhours, p.npix))
-                p.RMs.append(np.random.rand(1)[0] * 2. * np.pi)
+                # p.RMs.append(np.random.rand(1)[0] * 2. * np.pi)
+                RM_use = p.RM_sigma * np.random.randn(1)[0]
+                p.RMs.append(RM_use)
+
                 ionRM_out *= p.RMs[d]
+                ionRM_index = [0 for x in range(p.ntime)]
 
         else:
             ionRM_out = None
+            ionRM_index = range(p.ntime)
 
         ## Debugging stuff
         if debug == True and p.point_source_sim == True:
@@ -629,6 +640,9 @@ if __name__ == '__main__':
     if (p.unpolarized == True) and (p.ionosphere == True):
         raise Exception('Simulation includes the ionosphere with an unpolarized sky! Dummy!')
 
+    if p.unpolarized == False and p.ionosphere == False and p.ndays > 1:
+        raise Exception('Multiple days are set for a non-ionosphere run.')
+
     if p.instrument == 'paper':
         out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
     elif p.instrument == 'paper_hfss':
@@ -644,6 +658,7 @@ if __name__ == '__main__':
     os.makedirs(p.out_dir_use)
     from shutil import copyfile
     copyfile('parameters.yaml', p.out_dir_use + 'parameters.yaml')
+    print "Parameters file copied."
 
     global debug
     debug = False

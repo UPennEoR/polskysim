@@ -35,13 +35,38 @@ class SkyConstructor(object):
             'skyJ': self.skyJ,
             'skyK': self.skyK,
             'skyL': self.skyL,
-            'skyM': self.skyM
+            'skyM': self.skyM,
+            'skyN': self.skyN
         }
 
         return skyGenerators
 
-    def skyM(self):
+    def skyN(self):
+        """fgs SCK generated
+        nfreq 201
+        band 100-200 MHz
+        pfrac 0.01
+        """
+        file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac001/'
 
+        I = np.load(file_dir + 'I_use.npy')
+        if self.p.unpolarized == False:
+            Q = np.load(file_dir + 'Q_use.npy')
+            U = np.load(file_dir + 'U_use.npy')
+        else:
+            Q = np.zeros_like(I)
+            U = np.zeros_like(I)
+
+        V = np.zeros_like(I)
+
+        return I,Q,U,V
+
+    def skyM(self):
+        """fgs SCK generated
+        nfreq 201
+        band 100-200 MHz
+        pfrac 0.05
+        """
         file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac005/'
 
         I = np.load(file_dir + 'I_use.npy')
@@ -57,7 +82,11 @@ class SkyConstructor(object):
         return I,Q,U,V
 
     def skyL(self):
-
+        """fgs SCK generated
+        nfreq 201
+        band 100-200 MHz
+        pfrac 0.5
+        """
         file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac05/'
 
         I = np.load(file_dir + 'I_use.npy')

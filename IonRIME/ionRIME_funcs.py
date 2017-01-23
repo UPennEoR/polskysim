@@ -548,6 +548,74 @@ def PAPER_instrument_setup(param, z0_cza):
 
     return Jdata
 
+def neighbors_of_neighbors(nside, th, phi):
+    """
+    Finds the pixel numbers of the 8 neighbors of the the point (th,phi),
+    then find the 8 neighbors of each of those points. The are the 64 pixel
+    indices of the "neighbors of neighbors" of the point (th,phi).
+    """
+
+    neighbors = hp.get_all_neighbours(nside, th, phi=phi)
+    tn, pn = hp.pix2ang(nside, neighbors)
+
+    nn = hp.get_all_neighbours(nside, tn, phi=pn)
+    return nn.flatten()
+
+def analytic_dipole_setup(nside,nfreq, z0_cza=2.1068776972):
+    """
+    A flat spectrum Hertzian dipole model.
+    """
+    npix = hp.nside2npix(nside)
+    hpxidx = np.arange(npix)
+    th, phi = hp.pix2ang(nside, hpxidx)
+
+    z0 = r_hat_cart(z0_cza, 0.)
+
+    RotAxis = np.cross(z0, np.array([0,0,1.]))
+    RotAxis /= np.sqrt(np.dot(RotAxis,RotAxis))
+    RotAngle = np.arccos(np.dot(z0, [0,0,1.]))
+
+    R_z0 = rotation_matrix(RotAxis, RotAngle)
+
+    th_l, phi_l = rotate_sphr_coords(R_z0, th, phi)
+
+    ct,st = np.cos(th), np.sin(th)
+    cp,sp = np.cos(phi), np.sin(phi)
+
+    jones_dipole = np.array([
+            [ct * cp, -sp],
+            [ct * sp, cp]
+        ], dtype=np.complex128).transpose(2,0,1)
+
+    Rjones_dipole = rotate_jones(jones_dipole, R_z0, multiway=True)
+
+    Rjones_c = PAPER_transform_basis(nside, Rjones_dipole, z0_cza, R_z0)
+
+    z0pix = hp.vec2pix(nside, z0[0],z0[1],z0[2])
+    z0_nhbrs = neighbors_of_neighbors(nside, z0_cza, phi=0.)
+
+    for i in range(2):
+        for j in range(2):
+            z0_nbhd = Rjones_c[z0_nhbrs,i,j]
+
+            if i == j:
+                fill_val_pix = np.argmax(abs(z0_nbhd))
+                fill_val = z0_nbhd[fill_val_pix]
+
+            else:
+                fill_val_pix = np.argmin(abs(z0_nbhd))
+                fill_val = z0_nbhd[fill_val_pix]
+
+            Rjones_c[z0_nhbrs,i,j] = fill_val
+            Rjones_c[z0pix,i,j] = fill_val
+
+    hm = np.zeros(npix)
+    hm[th_l < np.pi/2.] = 1.
+    hm = np.broadcast_to(hm, (2,2,npix)).transpose(2,0,1)
+    jones = np.broadcast_to(Rjones_c * hm, (nfreq,npix,2,2))
+
+    return jones
+
 def PAPER_transform_basis(nside, jones, z0_cza, R_z0):
 
     npix = hp.nside2npix(nside)
