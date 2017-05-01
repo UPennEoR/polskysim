@@ -502,6 +502,11 @@ def main(p):
 
     p.RMs = []
 
+    if p.ionosphere_type == 'constant':
+        RMs_npz_path = '/data4/paper/zionos/polskysim/IonRIME/RM_sim_data/' + p.RMs_sequence_file_name
+        RMs_npz = np.load(RMs_npz_path)
+        p.RMs = RMs_npz['RMs']
+
     d0 = (p.sim_part-1)*p.ndays
     d1 = (p.sim_part-1)*p.ndays + p.ndays
     date_strs = [irf.get_time_string(x,p.day0) for x in range(d0-1,d1+1)]
@@ -568,13 +573,17 @@ def main(p):
 
             elif p.ionosphere_type == 'constant':
                 print "d is " + str(d)
-                ionRM_out = np.ones((p.nhours, p.npix))
-                # p.RMs.append(np.random.rand(1)[0] * 2. * np.pi)
-                RM_use = p.RM_sigma * np.random.randn(1)[0]
-                p.RMs.append(RM_use)
+                # ionRM_out = np.ones((p.nhours, p.npix))
+                # # p.RMs.append(np.random.rand(1)[0] * 2. * np.pi)
+                # RM_use = p.RM_sigma * np.random.randn(1)[0]
+                # p.RMs.append(RM_use)
+                #
+                # ionRM_out *= p.RMs[d]
+                # ionRM_index = [0 for x in range(p.ntime)]
 
-                ionRM_out *= p.RMs[d]
+                ionRM_out = p.RMs[d] * np.ones((p.nhours, p.npix))
                 ionRM_index = [0 for x in range(p.ntime)]
+
 
         else:
             ionRM_out = None
@@ -646,6 +655,8 @@ if __name__ == '__main__':
     if p.instrument == 'paper':
         out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
     elif p.instrument == 'paper_hfss':
+        out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
+    elif p.instrument == 'paper_feko':
         out_dir = os.path.join(p.output_base_directory, 'PAPER/', p.output_directory)
     else:
         out_dir = os.path.join(p.output_base_directory, 'HERA/', p.output_directory)
