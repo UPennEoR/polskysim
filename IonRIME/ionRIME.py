@@ -376,9 +376,10 @@ def main(p):
     sky_init = SkyConstructor(p)
     I,Q,U,V = sky_init.stokes_parameters
 
-    if p.point_source_sim == True:
-        pass
-    else:
+    # if p.point_source_sim == True:
+    #     pass
+    # else:
+    if p.point_source_sim == False:
         nside_use = hp.npix2nside(I.shape[1])
         I_alm, Q_alm, U_alm = map(lambda marr: map2alm(marr, p.lmax), [I,Q,U])
         if p.circular_pol == True:
@@ -399,7 +400,19 @@ def main(p):
     fname = "ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(p.nfreq)+ "_nside" + str(p.nside) + ".npy"
 
     # Ugh, this block makes baby jesus cry. l2oop
-    if p.instrument == 'paper_feko':
+    if p.instrument == 'hera_NicCST':
+        if os.path.exists('jones_save/HERA_NicCST/' + fname) == True:
+            ijones = np.load('jones_save/HERA_NicCST/' + fname)
+            print "Restored Jones model"
+        else:
+            import hera_NicCST_instrument_setup as hnis
+            ijones = hnis.make_ijones_spectrum(p, verbose=True)
+            np.save('jones_save/HERA_NicCST/' + fname, ijones)
+
+            tmark_inst = time.time()
+            print "Completed instrument_setup(), in " + str(tmark_inst - tmark0)
+
+    elif p.instrument == 'paper_feko':
         if os.path.exists('jones_save/PAPER/' + fname) == True:
             ijones = np.load('jones_save/PAPER/' + fname)
             print "Restored Jones model"

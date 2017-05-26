@@ -1,139 +1,23 @@
 import numpy as np, healpy as hp
-import csv, sys, os.path,re
-import matplotlib.pyplot as plt
+import os
+
 from scipy import interpolate
-import aipy as ap
 import ionRIME_funcs as irf
 import numba_funcs as irnf
 
-def csvname(n,c='G',pol='X'):
-    """Formats a file name to get the gain 'G' or phase 'P' of the copol 'X'
-    component or the crosspol 'Y' component at the frequency n (MHz)
+def txtname(n):
+    # dpath = '/data4/paper/zionos/polskysim/IonRIME/InstrumentSimData/NicCST_Old/'
+    # fname = 'Directivity ' + str(n) + ' MHz.txt'
 
-    n: An integer specifying the frequency in MHz.
-    """
+    dpath = '/data4/paper/zionos/polskysim/IonRIME/InstrumentSimData/NicCST/'
+    fname = 'HERA - E-pattern - ' + str(n) + 'MHz.txt'
+    return dpath + fname
 
-    dpath = '/data4/paper/zmart/HERA-Team/hera-cst/GP4Y2H_4900/'
-    fbase = c + pol + '4Y2H_4900_'
-    return dpath + fbase + str(n) + '.csv'
+def linear2Dbi(E): return  2. * 10. * np.log10(E)
 
-def ecomp(gfile,pfile):
-    """Returns a healpix map of the complex valued co- or cross-pol component
-    at a frequency specified in the file name.
-    gfile: full path of the file containing the amplitude data.
-    pfile: full path of the file containing the phase data.
+def Dbi2linear(Dbi): return np.power(10., Dbi/20.)
 
-    Based on github.com/HERA-Team/hera-cst/scripts/cst2hpx_C.py by (I think?) Aaron Parsons.
-    """
-    pwd = os.getcwd()
-    # inpath = os.path.join(os.path.split(pwd)[0],'GP_paper/')
-    # outpath= os.path.join(os.path.split(pwd)[0],'HP_paper/')
-    inpath = os.path.join(pwd,'GP/')
-    outpath = os.path.join(pwd,'hpx_HERA_Aug2016/')
-
-    re_gain = re.compile(r"dB\(Gain[X,Y]\) \[\] - Freq='([\d.]+)GHz' Phi='([\d.]+)deg'")
-    re_phas = re.compile(r"ang_deg\(rE[X,Y]\) \[deg\] - Freq='([\d.]+)GHz' Phi='([\d.]+)deg'")
-
-    def __splitMagPhaseFilesFromString(s):
-        """Splits file mag/phase pairs from string as mag0:phase0,mag1:phase1,..."""
-        magfile = []
-        phafile = []
-        data = s.split(',')
-        for d in data:
-            f = d.split(':')
-            magfile.append(f[0])
-            phafile.append(f[1])
-        return magfile,phafile
-    def __procfile(s):
-        """So you can use mag:phase pairs from a file"""
-        fp = open(s,'r')
-        magfile = []
-        phafile = []
-        for line in fp:
-            m,p=__splitMagPhaseFilesFromString(line.strip())
-            magfile.append(m[0])
-            phafile.append(p[0])
-        fp.close()
-        return magfile,phafile
-
-    with open(gfile) as mcsvfile:
-        with open(pfile) as pcsvfile:
-            pcsvread = csv.reader(pcsvfile)
-            mcsvread = csv.reader(mcsvfile)
-            header_m = mcsvread.next()
-            header_p = pcsvread.next()
-            fqs,phi    =np.array([map(float,re_gain.match(h).groups()) for h in header_m[1:]]).T
-            ###Do phase just to make sure they agree
-            fqs_p,phi_p=np.array([map(float,re_phas.match(h).groups()) for h in header_p[1:]]).T
-            phi.shape = (1,-1)
-
-    dm = np.loadtxt(gfile,delimiter=',',skiprows=1)
-    th,dBi = dm[:,:1], dm[:,1:]
-    th,phi = th * np.ones_like(phi) * ap.const.deg, phi * np.ones_like(th) * ap.const.deg
-    pm = np.loadtxt(pfile,delimiter=',',skiprows=1)
-    prad = pm[:,1:]*ap.const.deg
-    ggg = 10**(dBi/20.)
-    g = ggg*np.cos(prad) + 1j*ggg*np.sin(prad)
-
-    h = ap.map.Map(nside=32,dtype=np.complex128)
-    th_f,phi_f,g_f = th.flatten(), phi.flatten(), g.flatten()
-    th_f,phi_f = np.abs(th_f), np.where(th_f < 0, phi_f + np.pi, phi_f)
-    h.add((th_f,phi_f), np.ones_like(g_f), g_f)
-    h.reset_wgt()
-    h = h.map
-
-    g_out = h.get_map()
-
-## Another way to do it using a spline fit to the rectangular (theta,phi) grid.
-#     g1 = g[180:,:-1]
-#     g2 = g[:181,1:]
-#     g2 = g2[::-1,:]
-
-#     E_c = np.concatenate((g1,g2), axis=1)
-
-#     Ere = E_c.real
-#     Eim = E_c.imag
-
-#     th_use = np.radians(np.linspace(0., 180.,181,endpoint=True))
-#     phi_use = np.radians(np.linspace(0., 359., 360., endpoint=True))
-
-#     gre_interpolant = interpolate.interp2d(phi_use,th_use,Ere,kind='cubic',fill_value=0)
-#     gim_interpolant = interpolate.interp2d(phi_use,th_use,Eim,kind='cubic',fill_value=0)
-
-#     npix = hp.nside2npix(nside_out)
-#     hpxidx = np.arange(npix)
-#     th,phi = hp.pix2ang(nside_out,hpxidx)
-
-#     gre_hpx = np.zeros(npix)
-#     gim_hpx = np.zeros(npix)
-#     for pix in hpxidx:
-#         gre_hpx[pix] = gre_interpolant(phi[pix],th[pix])
-#         gim_hpx[pix] = gim_interpolant(phi[pix],th[pix])
-
-#     g_out = gre_hpx + 1j*gim_hpx
-
-    return g_out
-
-def udgrade(x,nside_out):
-    """
-    Spatial interpolation of a healpix map x using spherical harmonic decomposition
-    and then synthesis at resolution nside_out.
-    """
-    return hp.alm2map(hp.map2alm(x),nside_out, verbose=False)
-
-def udgrade_jones(jones, nside_out):
-    jones2 = np.zeros((hp.nside2npix(nside_out),2,2), dtype=np.complex128)
-
-    parts = [np.real,np.imag]
-    comp = [1., 1.j]
-    for i in range(2):
-        for j in range(2):
-            for k in range(2):
-                z = udgrade(parts[k](jones[:,i,j]),nside_out)
-                jones2[:,i,j] += z*comp[k]
-    return jones2
-
-def arm(hmap):
+def AzimuthalRotation(hmap):
     """
     Azimuthal clockwise(?) rotation of a healpix map by pi/2 about the z-axis
 
@@ -152,80 +36,66 @@ def arm(hmap):
     hout = hmap[idx]
     return hout
 
-def make_jones(freq):
-    if freq in range(90,221):
-        pass
-    else:
-        raise ValueError('Frequency is not available.')
+def udgrade(x,nside_out):
+    return hp.alm2map(hp.map2alm(x),nside_out, verbose=False)
 
-    nside = 512 # make this as large as possible to minimize singularity effects at zenith
-    ## nside 512 seems to work well enough using the "neighbours of neighbours" patch
-    ## of the zenith singularity in the ra/cza basis.
+def udgrade_jones(jones, nside_out):
+    jones2 = np.zeros((hp.nside2npix(nside_out),2,2), dtype=np.complex128)
+
+    parts = [np.real,np.imag]
+    comp = [1., 1.j]
+    for i in range(2):
+        for j in range(2):
+            for k in range(2):
+                z = udgrade(parts[k](jones[:,i,j]),nside_out)
+                jones2[:,i,j] += z*comp[k]
+    return jones2
+
+def make_jones(freq):
+
+    # if freq not in range(50,250):
+    #     raise Exception('The input must be an integer in the range [50,250]')
+
+    data1 = np.loadtxt(txtname(freq),skiprows=2)
+
+    th_data = np.radians(data1[:,0])
+    phi_data = np.radians(data1[:,1])
+
+    Et = data1[:,3] * np.exp(-1j * np.radians(data1[:,4]))
+    Ep = data1[:,5] * np.exp(-1j * np.radians(data1[:,6]))
+
+    cosp = np.cos(phi_data)
+    sinp = np.sin(phi_data)
+
+    rEt = cosp * Et - sinp * Ep
+    rEp = sinp * Et + cosp * Ep
+
+    th_f,phi_f = np.abs(th_data), np.where(th_data < 0, phi_data + np.pi, phi_data)
+    # th_f, phi_f = np.abs(thM), np.where(thM < 0, phiM + np.pi, phiM)
+
+    hpxiz = lambda m: irf.healpixellize(m,th_f,phi_f,32,fancy=False)
+
+    nside = 512
     npix = hp.nside2npix(nside)
     hpxidx = np.arange(npix)
-    t,p = hp.pix2ang(nside,hpxidx)
+    th,phi = hp.pix2ang(nside, hpxidx)
+    phi = np.where(phi >= np.pi, phi - np.amax(phi), phi)
 
-    g1 = ecomp(csvname(freq,'G','X'),csvname(freq,'P','X'))
-    g2 = ecomp(csvname(freq,'G','Y'),csvname(freq,'P','Y'))
+    EXt, EXp = [udgrade(hpxiz(X.real),nside) + 1j * udgrade(hpxiz(X.imag),nside) for X in [rEt,rEp]]
 
-    I = (abs(g1)**2. + abs(g2)**2.)
+    cosP = np.cos(phi)
+    sinP = np.sin(phi)
 
-    norm = np.sqrt(np.amax(I, axis=0))
+    nEXt = cosP * EXt + sinP * EXp
+    nEXp = -sinP * EXt + cosP * EXp
 
-    g1 /= norm
-    g2 /= norm
+    nEYt = AzimuthalRotation(nEXt)
+    nEYp = AzimuthalRotation(nEXp)
 
-    rhm = irf.rotate_healpix_map
+    jones_out = np.array([[nEXt,nEXp],[nEYt,nEYp]]).transpose(2,0,1)
+    joens_out = np.ascontiguousarray(jones_out)
 
-    Rb = np.array([
-    [0,0,-1],
-    [0,-1,0],
-    [-1,0,0]
-    ])
-
-    Et_b = udgrade(g1.real, nside) + 1j * udgrade(g1.imag, nside)
-    Ep_b = udgrade(g2.real, nside) + 1j * udgrade(g2.imag, nside)
-
-    tb,pb = irf.rotate_sphr_coords(Rb, t, p)
-
-    tb_v = irf.t_hat_cart(tb,pb)
-    pb_v = irf.p_hat_cart(tb,pb)
-
-    t_v = irf.t_hat_cart(t,p)
-    p_v = irf.p_hat_cart(t,p)
-
-    Rb_tb_v = np.einsum('ab...,b...->a...', Rb, tb_v)
-    Rb_pb_v = np.einsum('ab...,b...->a...', Rb, pb_v)
-
-    cosX = np.einsum('a...,a...', Rb_tb_v,t_v)
-    sinX = np.einsum('a...,a...', Rb_pb_v,t_v)
-
-    Et = Et_b * cosX + Ep_b * sinX
-    Ep = -Et_b * sinX + Ep_b * cosX
-
-    Ext = Et
-    Exp = Ep
-    ## This assumes that Et and Ep are the components of a dipole oriented
-    ## along the X axis, and we want to obtain the components of the same
-    ## dipole if it was oriented along Y.
-    ## In the current basis, this is done by a scalar rotation of the theta and phi
-    ## components by 90 degrees about the Z axis.
-    Eyt = arm(Et.real) + 1j*arm(Et.imag)
-    Eyp = arm(Ep.real) + 1j*arm(Ep.imag)
-
-    jones_c = np.array([[Ext,Exp],[Eyt,Eyp]]).transpose(2,0,1)
-
-    # jones_a = np.array([[rhm(Ext,Rb), rhm(Exp,Rb)],[rhm(Eyt,Rb),rhm(Eyp,Rb)]]).transpose(2,0,1)
-    #
-    # basis_rot = np.array([[cosX,-sinX],[sinX,cosX]]).transpose(2,0,1)
-    #
-    # jones_b = np.einsum('...ab,...bc->...ac', jones_a, basis_rot)
-    #
-    # Ext_b, Exp_b, Eyt_b, Eyp_b = [rhm(jones_b[:,i,j],Rb) for i in range(2) for j in range(2)]
-    #
-    # jones_c = np.array([[Ext_b,Exp_b],[Eyt_b,Eyp_b]]).transpose(2,0,1)
-
-    return jones_c
+    return jones_out
 
 def transform_basis(nside, jones, z0_cza, R_z0):
 
@@ -338,18 +208,6 @@ def jones2celestial_basis(jones, z0_cza=None):
 
     return jones_out
 
-## Duplicate?
-# def udgrade_jones(jones, nside_out):
-#     jones2 = np.zeros((hp.nside2npix(nside_out),2,2), dtype=np.complex128)
-#
-#     parts = [np.real,np.imag]
-#     comp = [1., 1.j]
-#     for i in range(2):
-#         for j in range(2):
-#             for k in range(2):
-#                 z = udgrade(parts[k](jones[:,i,j]),nside_out)
-#                 jones2[:,i,j] += z*comp[k]
-#     return jones2
 
 def jones_f(nu_node, nside):
     return udgrade_jones(jones2celestial_basis(make_jones(nu_node)), nside)
@@ -385,11 +243,16 @@ def make_ijones_spectrum(p, verbose=False):
     """
     fmax = int(p.nu_axis[-1]/1e6)
     fmin = int(p.nu_axis[0]/1e6)
+
+    # fmax = 250
+    # fmin = 80
     nfreq = len(p.nu_axis)
 
     nnodes = fmax - fmin + 1
 
     nu_nodes = np.array([fmin + x for x in range(nnodes)])
+    # nu_nodes = np.array(range(80,260,10))
+    # nnodes = len(nu_nodes)
 
     lmax = 3 * p.nside -1
     nlm = hp.Alm.getsize(lmax)
@@ -412,7 +275,7 @@ def make_ijones_spectrum(p, verbose=False):
     # note that the output of jones_f() is a beam with zenith at -31 deg latitude
     for n in range(nnodes):
         if verbose == True:
-            print "Loading jones node ", n
+            print "Loading jones node ", n, ", freq", nu_nodes[n]
         jones_node = jones_f(nu_nodes[n], p.nside)
         for i in range(2):
             for j in range(2):

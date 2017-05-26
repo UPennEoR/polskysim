@@ -283,7 +283,7 @@ def date_range(day0, ndays):
 
     # date_strs = ["-".join((year,month,std_day_str(n) for n in range(ndays) ]
 
-def healpixellize(f_in,theta_in,phi_in,nside,fancy=True):
+def healpixellize(f_in,theta_in,phi_in,nside,fancy=True,verbose=False):
     """ A dumb method for converting data f sampled at points theta and phi (not on a healpix grid) into a healpix at resolution nside """
 
     # Input arrays are likely to be rectangular, but this is inconvenient
@@ -309,16 +309,15 @@ def healpixellize(f_in,theta_in,phi_in,nside,fancy=True):
             hits[neighbours] += weights
         map = map/hits
         wh_no_hits = np.where(hits == 0)
-        print 'pixels with no hits',wh_no_hits[0].shape
-#         map[wh_no_hits[0]] = hp.UNSEEN
-        map[wh_no_hits[0]] = 0 # effectively a horizon mask in this case,
-        # since there is no FEKO data below the local horizaon.
+        #print 'pixels with no hits',wh_no_hits[0].shape
+        map[wh_no_hits[0]] = hp.UNSEEN
     else:
         for i,v in enumerate(f):
             map[pix[i]] += v
             hits[pix[i]] +=1
         map = map/hits
-    print 'Healpixellization successful.'
+    if verbose:
+        print 'Healpixellization successful.'
     return map
 
 def get_time_string(d, day0):
