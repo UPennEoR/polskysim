@@ -364,7 +364,14 @@ def hp_pix2rh_pix2ang(nside, pix_inds):
 
     return t,p
 
-def PAPER_instrument_setup(param, z0_cza):
+class Parameters:
+    def __init__(self, param_dict):
+        for key in param_dict:
+            setattr(self, key, param_dict[key])
+
+def PAPER_instrument_setup(parameters_dict, z0_cza):
+
+    param = Parameters(parameters_dict)
 
     import sys
     sys.path.append('PAPER_beams/')

@@ -6,6 +6,11 @@ import aipy as ap
 import ionRIME_funcs as irf
 import numba_funcs as irnf
 
+class Parameters:
+    def __init__(self, param_dict):
+        for key in param_dict:
+            setattr(self, key, param_dict[key])
+
 def csvname(n,c='G',pol='X'):
     """Formats a file name to get the gain 'G' or phase 'P' of the copol 'X'
     component or the crosspol 'Y' component at the frequency n (MHz)
@@ -378,7 +383,9 @@ def horizon_mask(jones, z0_cza):
 
     return hm
 
-def make_ijones_spectrum(p, verbose=False):
+def make_ijones_spectrum(parameters_dict, verbose=False):
+
+    p = Parameters(parameters_dict)
     """
     nu_axis: frequency in Hz
     """
