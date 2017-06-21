@@ -12,7 +12,7 @@ import radiono
 
 import astropy.coordinates as coord
 import astropy.units as units
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 
 import math
 import itertools
@@ -104,203 +104,76 @@ class VisibilitySimulation(object):
         self.ra0 = np.radians(self.hour_offset * 15.) # the starting RA of the simulation window i.e. when t=0, p.ra0 is at the beam's zenith meridian
 
     def run(self):
-        if self.final_day_average is False:
-            self.compute_visibility_for_each_day()
-        else:
-            self.compute_average_visibility()
+        self.compute_visibilities()
 
-    def compute_visibility_for_each_day(self):
+    def compute_visibilities(self):
         tmark_loopstart = time.time()
 
         if self.ionosphere == 'radionopy':
-            d0 = (self.sim_part-1)*self.ndays
-            d1 = (self.sim_part-1)*self.ndays + self.ndays
-            date_strs = [irf.get_time_string(x, self.day0) for x in range(d0-1,d1+1)]
 
-            UT_hour_start_str = radiono.utils.nextTransit(date_strs[1], np.degrees(self.ra0),0.).split(' ')[1] # an extra day has been added before "day0",
-            UT_hour_start = int(UT_hour_start_str[:2]) # the UT hour of the first RM map on the first day
+            init_transit_times = []
+            day0_str = '-'.join([str(x) for x in self.day0])
+            ra0 = np.radians(15. * self.hour_offset)
+            raf = ra0 + np.radians(15. * self.nhours)
+            ra_axis = np.linspace(ra0, raf, self.ntime)
 
+            for ra in ra_axis:
+                td = radiono.utils.nextTransit(day0_str, np.degrees(ra), 0.)
+                td = radiono.utils.eph2ionDate(td)
+                init_transit_times.append(Time(td, format='iso', scale='utc'))
+
+            self.UT_times = []
+            for di in range(self.ndays):
+                self.UT_times.append([])
+                for ti in range(self.ntime):
+                    td = str(init_transit_times[ti] + di * TimeDelta(1. * units.sday))
+                    self.UT_times[di].append(td)
+
+            UT_strs = [item for sublist in self.UT_times for item in sublist] # flattened
+
+            tmark_ion_start = time.time()
             print "Getting ionosphere data..."
-            heraRM = radiono.rm.HERA_RM(date_strs)
-            heraRM.make_radec_RM_maps() # compute all the radionopy RM maps that will be used. The RM array for each day is only ~0.7 MB.
+            heraRM = radiono.rm.HERA_RM(UT_strs)
+            heraRM.calc_ionRIME_rm()
+
+            self.RMs = heraRM.RMs
+
+            tmark_ion_stop = time.time()
+
+            print "Ionosphere data aquirred in ", + str(tmark_ion_start - tmark_ion_stop)
+
 
         elif self.ionosphere == 'constant':
             RMs_npz_path = '/data4/paper/zionos/polskysim/IonRIME/RM_sim_data/'
             RMs_npz_path += self.RMs_sequence_file_name
 
             RMs_npz = np.load(RMs_npz_path)
-            self.RMs = RMs_npz['RMs']
+            self.RMs = {k:RM[k] for k, RM in enumerate(RMs_npz['RMs'])}
+            self.UT_times = []
+            for di in range(self.ndays):
+                self.UT_times.append([])
+                for ti in range(self.ntime):
+                    self.UT_times.append(di)
 
         for d in range(self.ndays):
-            if self.ionosphere == 'radionopy':
-
-                print "d is " + str(d) + ", day is " + date_strs[d+1]
-
-                ds = d + (self.sim_part-1)*self.ndays
-
-                bins_per_hour = float(self.ntime)/self.nhours
-                hours_per_degree = 1./15.     # 1 deg ~= 1/15 hours
-                bins_per_degree = bins_per_hour * hours_per_degree
-
-                dec_part, _ = math.modf(bins_per_degree)
-
-                frac = Fraction(dec_part).limit_denominator(max_denominator=100)
-
-                time_bin_shift = ds * int(bins_per_degree) + ds/frac.denominator
-
-                ionRM_index = [(x * self.nhours/self.ntime) + UT_hour_start + 24 for x in range(-time_bin_shift, self.ntime)] # the +24 is to shift the UTs to the middle of the heraRM_use axis
-
-                ionRM_index = np.roll(ionRM_index, time_bin_shift)[-self.ntime:]
-
-                UT_index = list(set(ionRM_index))
-                UT_index.sort()
-
-                ionRM_index = [x - min(ionRM_index) for x in ionRM_index]
-                self.ionRM_index = ionRM_index
-
-                self.ionRM_out = np.zeros((self.nhours+1, self.npix))
-                heraRM_use = np.concatenate((heraRM.RMs[d,:,:], heraRM.RMs[d+1,:,:]), axis=0) # 48 hours of RM maps, starting at midnight on day "d"
-
-                if max(UT_index) > 47:
-                    heraRM_use = np.concatenate((heraRM_use, heraRM.RMs[d+2,:,:]), axis=0)
-
-                for i, hr in enumerate(UT_index):
-                    ##OLD
-                    # hrAngle = -p.ra0 + np.radians(hr * 15.) + np.pi # approximately true?
-                    # lh,mh = hp.Alm.getlm(3*heraRM.nside -1)
-                    # mh_rot = np.exp(1j * mh * hrAngle)
-                    # ionRM_out[i] = hp.alm2map(hp.map2alm(heraRM_use[hr,:], lmax=3*heraRM.nside -1)* mh_rot, p.nside, verbose=False)
-
-                    RotAngle = -self.ra0 - np.radians((hr-2) * 15.)
-                    # the (hr-2) has something to do with the local time zone being UT+2.
-                    # Found that it should be (hr-2) by trial-and-error matching the radionopy altaz map...
-                    temp1 = hp.ud_grade(heraRM_use[hr,:], nside_out=self.nside)
-                    self.ionRM_out[i] = irf.rotate_healpix_mapHPX(temp1,[-np.degrees(RotAngle)])
-
-            elif self.ionosphere == 'constant':
-                print "d is " + str(d)
-                # ionRM_out = np.ones((p.nhours, p.npix))
-                # # p.RMs.append(np.random.rand(1)[0] * 2. * np.pi)
-                # RM_use = p.RM_sigma * np.random.randn(1)[0]
-                # p.RMs.append(RM_use)
-                #
-                # ionRM_out *= p.RMs[d]
-                # ionRM_index = [0 for x in range(p.ntime)]
-
-                self.ionRM_out = self.RMs[d] * np.ones((self.nhours, self.npix))
-                ionRM_index = [0 for x in range(self.ntime)]
-
-
-            else:
-                self.ionRM_out = None
-                ionRM_index = range(self.ntime)
-
-            for t, h in enumerate(ionRM_index):
+            for t in range(self.ntime):
                 if self.point_source_sim is True:
-                    self.from_point_sources(d,t,h)
+                    self.from_point_sources(d,t)
                 else:
-                    self.from_healpix_grid(d,t,h)
+                    self.from_healpix_grid(d,t)
 
         self.Vis /= self.npix # normalization
         tmark_loopstop = time.time()
 
         print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)
 
-    def compute_average_visibility(self):
-        if self.ionosphere == 'none':
-            raise Exception('Idiocy')
-
-        tmark_loopstart = time.time()
-
-        UT_hour_start_str = radiono.utils.nextTransit(date_strs[1], np.degrees(self.ra0),0.).split(' ')[1] # an extra day has been added before "day0",
-        UT_hour_start = int(UT_hour_start_str[:2]) # the UT hour of the first RM map on the first day
-
-        if self.ionosphere == 'radionopy':
-            d0 = (self.sim_part-1)*self.ndays
-            d1 = (self.sim_part-1)*self.ndays + self.ndays
-            date_strs = [irf.get_time_string(x, self.day0) for x in range(d0-1,d1+1)]
-
-            heraRM = radiono.rm.HERA_RM(date_strs)
-            heraRM.make_radec_RM_maps() # compute all the radionopy RM maps that will be used. The RM array for each day is only ~0.7 MB.
-
-        elif self.ionosphere == 'constant':
-            RMs_npz_path = '/data4/paper/zionos/polskysim/IonRIME/RM_sim_data/' +self.RMs_sequence_file_name
-            RMs_npz = np.load(RMs_npz_path)
-            self.RMs = RMs_npz['RMs']
-
-        self.RM_series = np.zeros((self.ntime, self.ndays, self.npix))
-
-        for d in range(self.ndays):
-            if self.ionosphere == 'radionopy':
-
-                print "d is " + str(d) + ", day is " + date_strs[d+1]
-
-                ds = d + (self.sim_part-1)*self.ndays
-
-                bins_per_hour = float(self.ntime)/self.nhours
-                hours_per_degree = 1./15.     # 1 deg ~= 1/15 hours
-                bins_per_degree = bins_per_hour * hours_per_degree
-
-                dec_part, _ = math.modf(bins_per_degree)
-
-                frac = Fraction(dec_part).limit_denominator(max_denominator=100)
-
-                time_bin_shift = ds * int(bins_per_degree) + ds/frac.denominator
-
-                ionRM_index = [(x * self.nhours/self.ntime) + UT_hour_start + 24 for x in range(-time_bin_shift, self.ntime)] # the +24 is to shift the UTs to the middle of the heraRM_use axis
-
-                ionRM_index = np.roll(ionRM_index, time_bin_shift)[-self.ntime:]
-
-                UT_index = list(set(ionRM_index))
-                UT_index.sort()
-
-                ionRM_index = [x - min(ionRM_index) for x in ionRM_index]
-                self.ionRM_index = ionRM_index
-
-                self.ionRM_out = np.zeros((p.nhours+1, p.npix))
-                heraRM_use = np.concatenate((heraRM.RMs[d,:,:], heraRM.RMs[d+1,:,:]), axis=0) # 48 hours of RM maps, starting at midnight on day "d"
-
-                if max(UT_index) > 47:
-                    heraRM_use = np.concatenate((heraRM_use, heraRM.RMs[d+2,:,:]), axis=0)
-
-                RM_window = heraRM_use[UT_index]
-
-                for t, hr in enumerate(ionRM_index):
-                    self.RM_series[t,d,:] = RM_window[hr]
-
-            elif self.ionosphere == 'constant':
-                print "d is " + str(d)
-                # ionRM_out = np.ones((p.nhours, p.npix))
-                # # p.RMs.append(np.random.rand(1)[0] * 2. * np.pi)
-                # RM_use = p.RM_sigma * np.random.randn(1)[0]
-                # p.RMs.append(RM_use)
-                #
-                # ionRM_out *= p.RMs[d]
-                # ionRM_index = [0 for x in range(p.ntime)]
-
-                self.ionRM_out = self.RMs[d] * np.ones((self.nhours, self.npix))
-                ionRM_index = [0 for x in range(self.ntime)]
-
-                for t, hr in enumerate(ionRM_index):
-                    self.RM_series[t,d,:] = self.ionRM_out[hr]
-
-        d = 1
-        for t in range(self.ntime):
-            self.from_healpix_grid(d,t,h)
-
-        self.Vis /= self.npix # normalization
-        tmark_loopstop = time.time()
-
-    def from_healpix_grid(self,d,t,h):
+    def from_healpix_grid(self,d,t):
 
         print "t is " + str(t)
         total_angle = float(self.nhours * 15) # degrees
         offset_angle = float(self.hour_offset * 15) # degrees
         zl_ra = ((float(t) / float(self.ntime)) * np.radians(total_angle) + np.radians(offset_angle)) % (2*np.pi) # radians
 
-        # npix = hp.nside2npix(p.nside)
-
-        RotAxis = np.array([0.,0.,1.])
         RotAngle = zl_ra
 
         mrot = np.exp(1j * self.m * RotAngle)
@@ -319,7 +192,8 @@ class VisibilitySimulation(object):
         """
         if self.ionosphere != 'none':
             if self.final_day_average is False:
-                ionRM_t = self.ionRM_out[h] # pick out the map corresponding to this hour
+                ionRM_t = self.RMs[self.UT_times[d][t]]
+                ionRM_t = hp.alm2map(hp.map2alm(ionRM_t), self.nside, verbose=False)
 
                 c = 299792458. # meters / sec
                 lbda2 = (c / self.nu_axis)**2.
@@ -333,7 +207,8 @@ class VisibilitySimulation(object):
                 Ut = QUout.imag
 
             elif self.final_day_average is True:
-                ionRM_t = self.RM_series[t]
+                ionRM_t = self.RMs[self.UT_times[d][t]]
+                ionRM_t = hp.alm2map(hp.map2alm(ionRM_t), self.nside, verbose=False)
 
                 c = 299792458. # meters / sec
                 lbda2 = (c / self.nu_axis)**2.
