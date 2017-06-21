@@ -140,7 +140,7 @@ class VisibilitySimulation(object):
 
             tmark_ion_stop = time.time()
 
-            print "Ionosphere data aquirred in ", + str(tmark_ion_start - tmark_ion_stop)
+            print "Ionosphere data aquirred in " + str(tmark_ion_stop - tmark_ion_start)
 
 
         elif self.ionosphere == 'constant':
@@ -148,14 +148,15 @@ class VisibilitySimulation(object):
             RMs_npz_path += self.RMs_sequence_file_name
 
             RMs_npz = np.load(RMs_npz_path)
-            self.RMs = {k:RM[k] for k, RM in enumerate(RMs_npz['RMs'])}
+            self.RMs = {k:RM for k, RM in enumerate(RMs_npz['RMs'])}
             self.UT_times = []
             for di in range(self.ndays):
                 self.UT_times.append([])
                 for ti in range(self.ntime):
-                    self.UT_times.append(di)
+                    self.UT_times[di].append(di)
 
         for d in range(self.ndays):
+            print "d is " + str(d)
             for t in range(self.ntime):
                 if self.point_source_sim is True:
                     self.from_point_sources(d,t)

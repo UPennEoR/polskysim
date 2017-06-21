@@ -3,6 +3,7 @@ from visibility_simulation import VisibilitySimulation
 import sys, os
 import yaml
 from shutil import copyfile, rmtree
+import git
 
 
 if __name__ == "__main__":
@@ -53,6 +54,9 @@ if __name__ == "__main__":
     VS = VisibilitySimulation(P)
     VS.run()
 
+    repo = git.Repo(search_parent_directories=True)
+    sha = repo.head.object.hexsha
+
     out_name = "visibility.npz"
 
-    np.savez(out_dir + out_name, Vis=VS.Vis, parameters=P)
+    np.savez(out_dir + out_name, Vis=VS.Vis, parameters=P, git_hash=sha)
