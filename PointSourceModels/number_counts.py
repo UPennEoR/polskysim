@@ -81,7 +81,7 @@ dNdS_6C = dNdS_models(bc_hw14,model='6C')
 dNdS_VLSS = dNdS_models(bc_hw14,model='VLSS')
 
 #%%
-plt.figure(1,figsize=(8,10))
+plt.figure(1,figsize=(4,5))
 #plt.clf()
 plt.subplot(311)
 plt.loglog(bc_hw14,dnds_hw14,label='H-W14')
@@ -111,9 +111,14 @@ plt.xlabel('Flux [Jy]')
 plt.ylabel(r'$S^{2.5} dN/dS}~[\mathrm{Jy}^{1.5} \mathrm{sr}^{-1}]$')
 plt.ylim([1e2,1e5])
 
-#plt.savefig('number_counts.png',dpi=300)
-plt.show()
+plt.savefig('number_counts.png',dpi=300)
 
 
+# Are there any likely sources in H-W14 that could be the anomaly in Moore 16?
+candidates = (t['S180']>10)*(t['RAJ2000'] > 90)*(t['RAJ2000']<120)#*(t['DEJ2000']<-30+45./2.)*(t['DEJ2000']<-30-45./2.)
 
+wh_candidates = np.where(candidates)
+
+
+#plt.show()
 
