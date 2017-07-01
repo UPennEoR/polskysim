@@ -68,6 +68,10 @@ class VisibilitySimulation(object):
             if self.circular_pol is True:
                 self.V_alm = map2alm(self.V, self.lmax)
 
+        if self.point_source_sim is True:
+            self.src_ra = sky_init.src_ra
+            self.src_cza = sky_init.src_cza
+
         ## Instrument
         ## ijones.shape = (self.nfreq, self.npix, 2, 2)
 
@@ -193,8 +197,12 @@ class VisibilitySimulation(object):
         """
         if self.ionosphere != 'none':
             if self.final_day_average is False:
-                ionRM_t = self.RMs[self.UT_times[d][t]]
-                ionRM_t = hp.alm2map(hp.map2alm(ionRM_t), self.nside, verbose=False)
+
+                if self.ionosphere == 'constant':
+                    ionRM_t = self.RMs[self.UT_times[d][t]] * np.ones(self.npix)
+                else:
+                    ionRM_t = self.RMs[self.UT_times[d][t]]
+                    ionRM_t = hp.alm2map(hp.map2alm(ionRM_t), self.nside, verbose=False)
 
                 c = 299792458. # meters / sec
                 lbda2 = (c / self.nu_axis)**2.
@@ -208,8 +216,12 @@ class VisibilitySimulation(object):
                 Ut = QUout.imag
 
             elif self.final_day_average is True:
-                ionRM_t = self.RMs[self.UT_times[d][t]]
-                ionRM_t = hp.alm2map(hp.map2alm(ionRM_t), self.nside, verbose=False)
+
+                if self.ionosphere == 'constant':
+                    ionRM_t = self.RMs[self.UT_times[d][t]] * np.ones(self.npix)
+                else:
+                    ionRM_t = self.RMs[self.UT_times[d][t]]
+                    ionRM_t = hp.alm2map(hp.map2alm(ionRM_t), self.nside, verbose=False)
 
                 c = 299792458. # meters / sec
                 lbda2 = (c / self.nu_axis)**2.
@@ -233,7 +245,7 @@ class VisibilitySimulation(object):
 
         irnf.instrRIME_integral(self.ijones, sky_t, self.ijonesH, self.K, self.Vis[d,t,:,:,:].squeeze())
 
-    def from_point_sources(self,d,t,h):
+    def from_point_sources(self,d,t):
         # if p.circular_pol == True:
         #     I,Q,U,V = sky_list
         # else:
@@ -251,7 +263,7 @@ class VisibilitySimulation(object):
         # s0 = hp.ang2vec(src_cza,src_ra)
         # sf = np.einsum('...ab,...b->...b', R_t, s0)
 
-        src_ra_f = self.src_ra + RotAngle
+        self.src_ra_f = self.src_ra + RotAngle
         sf = hp.ang2vec(self.src_cza, self.src_ra_f)
 
         # s0 = hp.ang2vec(src_cza,src_ra)
@@ -270,8 +282,8 @@ class VisibilitySimulation(object):
         ijonesH_t = self.ijonesH[:,inds_f,:,:]
         Kt = self.K[:,inds_f]
 
-        if p.unpolarized == True:
-            Ut = np.zeros((p.nfreq,It.shape[-1]))
+        if self.unpolarized == True:
+            Ut = np.zeros((self.nfreq,It.shape[-1]))
 
             sky_t = np.array([
                 [It, Ut],

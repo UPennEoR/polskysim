@@ -48,7 +48,10 @@ class SkyConstructor(object):
             'skyK': self.skyK,
             'skyL': self.skyL,
             'skyM': self.skyM,
-            'skyN': self.skyN
+            'skyN': self.skyN,
+            'point_skyC': self.point_skyC,
+            'point_skyD': self.point_skyD,
+            'point_skyE': self.point_skyE
         }
 
         return skyGenerators
@@ -256,6 +259,41 @@ class SkyConstructor(object):
         # I = np.ones(self.nfreq)
         I *= 150. # Jy?
         Q,U,V = [np.zeros((self.nfreq, npix)) for x in range(3)]
+
+        return I,Q,U,V
+
+    def point_skyE(self):
+        self.src_ra = np.radians(np.array([5. * 15.]))
+        self.src_dec = np.radians(np.array([-15.]))
+        self.src_cza = np.pi/2. - self.src_dec
+
+        src_idx = hp.ang2pix(self.nside, self.src_cza, self.src_ra)
+        I = np.ones((self.nfreq, len(src_idx)))
+        U = 0.2 * np.ones((self.nfreq, len(src_idx)))
+        Q,V = [np.zeros((self.nfreq, len(src_idx))) for x in range(2)]
+
+        return I,Q,U,V
+
+    def point_skyD(self):
+        self.src_ra = np.radians(np.array([5. * 15.]))
+        self.src_dec = np.radians(np.array([-15.]))
+        self.src_cza = np.pi/2. - self.src_dec
+
+        src_idx = hp.ang2pix(self.nside, self.src_cza, self.src_ra)
+        I = np.ones((self.nfreq, len(src_idx)))
+        Q = 0.2 * np.ones((self.nfreq, len(src_idx)))
+        U,V = [np.zeros((self.nfreq, len(src_idx))) for x in range(2)]
+
+        return I,Q,U,V
+
+    def point_skyC(self):
+        self.src_ra = np.radians(np.array([5. * 15.]))
+        self.src_dec = np.radians(np.array([-15.]))
+        self.src_cza = np.pi/2. - self.src_dec
+
+        src_idx = hp.ang2pix(self.nside, self.src_cza, self.src_ra)
+        I = np.ones((self.nfreq, len(src_idx)))
+        Q,U,V = [np.zeros((self.nfreq, len(src_idx))) for x in range(3)]
 
         return I,Q,U,V
 
