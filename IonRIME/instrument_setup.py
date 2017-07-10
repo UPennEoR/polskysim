@@ -45,7 +45,7 @@ class InstrumentConstructor(object):
             'paper_hfss': 'jones_save/PAPER_HFSS/',
             'paper_feko': 'jones_save/PAPER/',
             'hera_legacy': 'jones_save/',
-            'analytic_dipole': None
+            'analytic_dipole': 'analytic_dipole/'
         }
 
         self.relative_path = self.InstrumentDirectories[self.instrument] + self.fname
@@ -64,7 +64,8 @@ class InstrumentConstructor(object):
             print "Restored Jones model"
         else:
             self.iJonesModel = self.InstrumentGenerators[self.instrument](parameters)
-            np.save(self.relative_path, self.iJonesModel)
+            if self.instrument != 'analytic_dipole':
+                np.save(self.relative_path, self.iJonesModel)
 
 
     def hera_NicCST(self, parameters):

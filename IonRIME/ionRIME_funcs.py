@@ -123,6 +123,18 @@ def rotate_jones(j, rotmat, multiway=True):
 
     return jones
 
+def unitary_rotate_jones(j, rot, multiway=True):
+    if multiway == True:
+        j = flatten_jones(j)
+
+    D = lambda hmap: unitary_healpix_rotation(hmap,rot)
+    jones = np.array([D(x) for x in j.T]).T
+
+    if multiway == True:
+        jones = inverse_flatten_jones(jones)
+
+    return jones
+
 def harmonic_ud_grade(m, nside_in, nside_out):
     """
     Decompose a map at a resolution nside_in into spherical harmonic components
@@ -131,6 +143,24 @@ def harmonic_ud_grade(m, nside_in, nside_out):
     lmax = 3 * nside_in - 1
     alm = hp.map2alm(m, lmax=lmax)
     return hp.alm2map(alm, nside_out, lmax=lmax, verbose=False)
+
+def unitary_healpix_rotation(hmap, rot):
+    a1,a2,a3 = [np.degrees(x) for x in rot]
+    R = hp.rotator.Rotator(rot=[a1,a2,a3])
+
+    npix = len(hmap)
+    nside = hp.npix2nside(npix)
+    hpxidx = np.arange(npix)
+
+    th,phi = hp.pix2ang(nside, hpxidx)
+
+    th2, phi2 = R(th, phi)
+
+    indx = hp.ang2pix(nside, th2, phi2)
+
+    hmapR = hmap[indx]
+
+    return hmapR
 
 def rotate_healpix_mindex(m, R):
     npix = len(m)
@@ -567,60 +597,66 @@ def neighbors_of_neighbors(nside, th, phi):
     nn = hp.get_all_neighbours(nside, tn, phi=pn)
     return nn.flatten()
 
-def analytic_dipole_setup(nside,nfreq, z0_cza=2.1068776972):
-    """
-    A flat spectrum Hertzian dipole model.
-    """
+def analytic_dipole_setup(nside, nfreq, z0_cza=None):
+    def transform_basis(nside, jones, z0_cza, R_z0):
+
+        npix = hp.nside2npix(nside)
+        hpxidx = np.arange(npix)
+        cza, ra = hp.pix2ang(nside, hpxidx)
+
+        fR = R_z0
+
+        tb, pb = rotate_sphr_coords(fR, cza, ra)
+
+        cza_v = t_hat_cart(cza, ra)
+        ra_v = p_hat_cart(cza, ra)
+
+        tb_v = t_hat_cart(tb, pb)
+
+        fRcza_v = np.einsum('ab...,b...->a...', fR, cza_v)
+        fRra_v = np.einsum('ab...,b...->a...', fR, ra_v)
+
+        cosX = np.einsum('a...,a...', fRcza_v, tb_v)
+        sinX = np.einsum('a...,a...', fRra_v, tb_v)
+
+
+        basis_rot = np.array([[cosX, sinX],[-sinX, cosX]])
+        basis_rot = np.transpose(basis_rot,(2,0,1))
+
+        return np.einsum('...ab,...bc->...ac', jones, basis_rot)
+
+    if z0_cza is None:
+        z0_cza = np.radians(120.72)
+
     npix = hp.nside2npix(nside)
     hpxidx = np.arange(npix)
     th, phi = hp.pix2ang(nside, hpxidx)
 
-    z0 = r_hat_cart(z0_cza, 0.)
+    R_z0 = hp.rotator.Rotator(rot=[0,-np.degrees(z0_cza)])
 
-    RotAxis = np.cross(z0, np.array([0,0,1.]))
-    RotAxis /= np.sqrt(np.dot(RotAxis,RotAxis))
-    RotAngle = np.arccos(np.dot(z0, [0,0,1.]))
+    th_l, phi_l = R_z0(th, phi)
+    phi_l[phi_l < 0] += 2. * np.pi
 
-    R_z0 = rotation_matrix(RotAxis, RotAngle)
-
-    th_l, phi_l = rotate_sphr_coords(R_z0, th, phi)
-
-    ct,st = np.cos(th), np.sin(th)
-    cp,sp = np.cos(phi), np.sin(phi)
+    ct,st = np.cos(th_l), np.sin(th_l)
+    cp,sp = np.cos(phi_l), np.sin(phi_l)
 
     jones_dipole = np.array([
             [ct * cp, -sp],
             [ct * sp, cp]
         ], dtype=np.complex128).transpose(2,0,1)
 
-    Rjones_dipole = rotate_jones(jones_dipole, R_z0, multiway=True)
+    jones_c = transform_basis(nside, jones_dipole, z0_cza, np.array(R_z0.mat))
 
-    Rjones_c = PAPER_transform_basis(nside, Rjones_dipole, z0_cza, R_z0)
+    sigma = 0.4
 
-    z0pix = hp.vec2pix(nside, z0[0],z0[1],z0[2])
-    z0_nhbrs = neighbors_of_neighbors(nside, z0_cza, phi=0.)
+    G = np.exp(-(th_l/sigma)**2. /2.)
 
-    for i in range(2):
-        for j in range(2):
-            z0_nbhd = Rjones_c[z0_nhbrs,i,j]
+    G = np.broadcast_to(G, (2,2,npix)).T
 
-            if i == j:
-                fill_val_pix = np.argmax(abs(z0_nbhd))
-                fill_val = z0_nbhd[fill_val_pix]
+    jones_c *= G
+    jones_out = np.broadcast_to(jones_c, (nfreq, npix, 2,2))
 
-            else:
-                fill_val_pix = np.argmin(abs(z0_nbhd))
-                fill_val = z0_nbhd[fill_val_pix]
-
-            Rjones_c[z0_nhbrs,i,j] = fill_val
-            Rjones_c[z0pix,i,j] = fill_val
-
-    hm = np.zeros(npix)
-    hm[th_l < np.pi/2.] = 1.
-    hm = np.broadcast_to(hm, (2,2,npix)).transpose(2,0,1)
-    jones = np.broadcast_to(Rjones_c * hm, (nfreq,npix,2,2))
-
-    return jones
+    return jones_out
 
 def PAPER_transform_basis(nside, jones, z0_cza, R_z0):
 
