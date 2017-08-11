@@ -69,7 +69,15 @@ class InstrumentConstructor(object):
 
 
     def hera_NicCST(self, parameters):
-        return hnis.make_ijones_spectrum(parameters, verbose=True)
+        ijones, solid_angle, peak_norms = hnis.make_ijones_spectrum(parameters, verbose=True)
+        
+        nu0 = str(int(self.nu_axis[0] / 1e6))
+        nuf = str(int(self.nu_axis[-1] / 1e6))
+        fname = "norms_ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + '.npz'
+
+        save_path = self.InstrumentDirectories[self.instrument] + fname
+        np.savez(save_path, solid_angle=solid_angle, peak_norms=peak_norms)
+        return ijones
 
     def hera_hfss(self, parameters):
         return hhis.make_ijones_spectrum(parameters, verbose=False)

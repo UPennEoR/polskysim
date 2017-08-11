@@ -135,14 +135,17 @@ def unitary_rotate_jones(j, rot, multiway=True):
 
     return jones
 
-def harmonic_ud_grade(m, nside_in, nside_out):
+def harmonic_ud_grade(hmap, nside):
     """
     Decompose a map at a resolution nside_in into spherical harmonic components
     and then resynthesize the map at nside_out.
     """
-    lmax = 3 * nside_in - 1
-    alm = hp.map2alm(m, lmax=lmax)
-    return hp.alm2map(alm, nside_out, lmax=lmax, verbose=False)
+    npix_in = len(hmap)
+    nside_in = hp.npix2nside(npix_in)
+    lmax_in = 3 * nside_in - 1
+    hmap_out = hp.alm2map(hp.map2alm(hmap, lmax=lmax_in), nside, verbose=False)
+
+    return hmap_out
 
 def unitary_healpix_rotation(hmap, rot):
     a1,a2,a3 = [np.degrees(x) for x in rot]

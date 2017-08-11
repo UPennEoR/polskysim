@@ -265,19 +265,31 @@ def make_ijones_spectrum(parameters_dict, verbose=False):
 
     z0_cza = np.radians(120.7215)
 
+    solid_angle_spectrum = []
+    peak_norm_spectrum = []
     ijones = np.zeros((p.nfreq,p.npix,2,2), dtype=np.complex128)
     for n in range(p.nfreq):
         for i in range(2):
             for j in range(2):
                 ijones[n,:,i,j] = isht(joneslm_int[n,:,i,j,0]) + 1j*isht(joneslm_int[n,:,i,j,1])
 
-        If = abs(ijones[n,:,0,0])**2. + abs(ijones[n,:,0,1])**2. + abs(ijones[n,:,0,1])**2. + abs(ijones[n,:,1,0])**2
-        norm = np.sqrt(np.amax(If))
-        ijones[n] /= norm
-
         ijones[n] *= horizon_mask(ijones[n].squeeze(), z0_cza)
 
-        if verbose == True:
-            print "norm is:", norm
+        If = abs(ijones[n,:,0,0])**2. + abs(ijones[n,:,0,1])**2. + abs(ijones[n,:,0,1])**2. + abs(ijones[n,:,1,0])**2
 
-    return ijones
+        peak_norm = np.amax(If)
+
+        solid_angle = (4. * np.pi / p.npix) * np.sum(If/peak_norm)
+
+        peak_norm_spectrum.append(peak_norm)
+        solid_angle_spectrum.append(solid_angle)
+
+        ijones[n] /= np.sqrt(peak_norm)
+        ijones[n] /= np.sqrt(solid_angle)
+
+        if verbose == True:
+            print "norm is:", np.sqrt(peak_norm)
+
+    solid_angle_spectrum = np.array(solid_angle_spectrum)
+    peak_norm_spectrum = np.array(peak_norm_spectrum)
+    return ijones, solid_angle_spectrum, peak_norm_spectrum

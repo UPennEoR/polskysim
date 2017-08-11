@@ -167,7 +167,7 @@ class VisibilitySimulation(object):
                 else:
                     self.from_healpix_grid(d,t)
 
-        self.Vis /= self.npix # normalization
+        self.Vis *= (4. * np.pi / self.npix)
         tmark_loopstop = time.time()
 
         print "Visibility loop completed in " + str(tmark_loopstop - tmark_loopstart)

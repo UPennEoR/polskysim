@@ -3,6 +3,7 @@ import healpy as hp
 import astropy.coordinates as coord
 import astropy.units as units
 from astropy.time import Time
+import pygsm
 import ionRIME_funcs as irf
 import os
 import sys
@@ -35,6 +36,7 @@ class SkyConstructor(object):
     def collect_full_skies(self):
 
         skyGenerators = {
+            'unpol_GSM2008': self.unpol_GSM2008,
             'skyA': self.skyA,
             'skyB': self.skyB,
             'skyC': self.skyC,
@@ -52,7 +54,9 @@ class SkyConstructor(object):
             'point_skyC': self.point_skyC,
             'point_skyD': self.point_skyD,
             'point_skyE': self.point_skyE,
-            'point_skyF': self.point_skyF
+            'point_skyF': self.point_skyF,
+            'point_skyG': self.point_skyG,
+            'point_skyH': self.point_skyH
         }
 
         return skyGenerators
@@ -263,6 +267,30 @@ class SkyConstructor(object):
 
         return I,Q,U,V
 
+    def point_skyH(self):
+        self.src_ra = np.radians(np.array([5. * 15.]))
+        self.src_dec = np.radians(np.array([-32.72]))
+        self.src_cza = np.pi/2. - self.src_dec
+
+        src_idx = hp.ang2pix(self.nside, self.src_cza, self.src_ra)
+        I = np.ones((self.nfreq, len(src_idx)))
+        U = 0.2 * np.ones((self.nfreq, len(src_idx)))
+        Q,V = [np.zeros((self.nfreq, len(src_idx))) for x in range(2)]
+
+        return I,Q,U,V
+
+    def point_skyG(self):
+        self.src_ra = np.radians(np.array([5. * 15.]))
+        self.src_dec = np.radians(np.array([-32.72]))
+        self.src_cza = np.pi/2. - self.src_dec
+
+        src_idx = hp.ang2pix(self.nside, self.src_cza, self.src_ra)
+        I = np.ones((self.nfreq, len(src_idx)))
+        Q = 0.2 * np.ones((self.nfreq, len(src_idx)))
+        U,V = [np.zeros((self.nfreq, len(src_idx))) for x in range(2)]
+
+        return I,Q,U,V
+
     def point_skyE(self):
         self.src_ra = np.radians(np.array([5. * 15.]))
         self.src_dec = np.radians(np.array([-15.]))
@@ -288,6 +316,9 @@ class SkyConstructor(object):
         return I,Q,U,V
 
     def point_skyF(self):
+        """
+        unpolarized point source that transits zenith
+        """
         self.src_ra = np.radians(np.array([5. * 15.]))
         self.src_dec = np.radians(np.array([-32.72]))
         self.src_cza = np.pi/2. - self.src_dec
@@ -393,4 +424,31 @@ class SkyConstructor(object):
         stokes_cubes = gal.getpolsky()
         I,Q,U,V = [stokes_cubes[:,i,:] for i in range(4)]
 
+        return I,Q,U,V
+
+    def GSM2008(self):
+        x_c = np.array([1.,0,0]) # unit vectors to be transformed by astropy
+        y_c = np.array([0,1.,0])
+        z_c = np.array([0,0,1.])
+
+        # The GSM is given in galactic coordinates. We will rotate it to J2000 equatorial coordinates.
+        axes_icrs = coord.SkyCoord(x=x_c, y=y_c, z=z_c, frame='icrs', representation='cartesian')
+        axes_gal = axes_icrs.transform_to('galactic')
+        axes_gal.representation = 'cartesian'
+
+        R = np.array(axes_gal.cartesian.xyz) # The 3D rotation matrix that defines the coordinate transformation.
+
+        I = np.zeros((self.nfreq, self.npix))
+
+        gsm = pygsm.GlobalSkyModel(freq_unit='MHz', interpolation='cubic')
+        for i,nu in enumerate(self.nu_axis):
+            I_nu = gsm.generate(nu * 1e-6)
+            rI_nu = irf.rotate_healpix_mindex(I_nu, R)
+            I[i,:] = irf.harmonic_ud_grade(rI_nu, self.nside)
+
+        return I
+
+    def unpol_GSM2008(self):
+        I = self.GSM2008()
+        Q,U,V = [np.zeros_like(I) for k in range(3)]
         return I,Q,U,V
