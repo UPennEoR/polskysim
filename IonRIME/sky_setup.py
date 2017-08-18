@@ -67,7 +67,10 @@ class SkyConstructor(object):
         band 100-200 MHz
         pfrac 0.01
         """
-        file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac001/'
+        if os.path.exists('/lustre/aoc/projects/hera/zmartino')
+            file_dir = '/lustre/aoc/projects/hera/zmartino/zionos/polskysim/fgs/pfrac001/'
+        elif os.path.exists('/data4/paper'):
+            file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac001/'
 
         I = np.load(file_dir + 'I_use.npy')
         if self.unpolarized == False:
@@ -87,7 +90,10 @@ class SkyConstructor(object):
         band 100-200 MHz
         pfrac 0.05
         """
-        file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac005/'
+        if os.path.exists('/data4/paper/'):
+            file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac005/'
+        else:
+            file_dir = '/lustre/aoc/projects/hera/zmartino/zionos/polskysim/fgs/pfrac005/'
 
         I = np.load(file_dir + 'I_use.npy')
         if self.unpolarized == False:
@@ -107,7 +113,10 @@ class SkyConstructor(object):
         band 100-200 MHz
         pfrac 0.5
         """
-        file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac05/'
+        if os.path.exists('/data4/paper/'):
+            file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac05/'
+        else:
+            file_dir = '/lustre/aoc/projects/hera/zmartino/zionos/polskysim/fgs/pfrac05/'
 
         I = np.load(file_dir + 'I_use.npy')
         if self.unpolarized == False:
@@ -140,8 +149,10 @@ class SkyConstructor(object):
         if (self.nside != 128) or (self.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-
-        fpath = '/data4/paper/zionos/cora_maps/cora_polgalaxy1_nside128_nfreq241_band140_170.h5'
+        if os.path.exists('/data4/paper/'):
+            fpath = '/data4/paper/zionos/cora_maps/cora_polgalaxy1_nside128_nfreq241_band140_170.h5'
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_polgalaxy1_nside128_nfreq241_band140_170.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if self.unpolarized == True:
@@ -156,8 +167,10 @@ class SkyConstructor(object):
         if (self.nside != 128) or (self.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-
-        fpath = '/data4/paper/zionos/cora_maps/cora_polforeground1_nside128_nfreq241_band140_170.h5'
+        if os.path.exists('/data4/paper/'):
+            fpath = '/data4/paper/zionos/cora_maps/cora_polforeground1_nside128_nfreq241_band140_170.h5'
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_polforeground1_nside128_nfreq241_band140_170.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if self.unpolarized == True:
@@ -172,8 +185,11 @@ class SkyConstructor(object):
         if (self.nside != 128) or (self.nfreq != 201): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
+        if os.path.exists('/data4/paper/')
+            fpath = '/data4/paper/zionos/cora_maps/cora_polforeground2_nside128_nfreq201_band100_200.h5'
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_polforeground2_nside128_nfreq201_band100_200.h5'
 
-        fpath = '/data4/paper/zionos/cora_maps/cora_polforeground2_nside128_nfreq201_band100_200.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if self.unpolarized == True:
@@ -190,8 +206,10 @@ class SkyConstructor(object):
         if (self.nside != 256) or (self.nfreq != 201): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-
-        fpath = '/data4/paper/zionos/cora_maps/cora_polforeground3_nside256_nfreq201_band100_200.h5'
+        if os.path.exists('data4/paper/'):
+            fpath = '/data4/paper/zionos/cora_maps/cora_polforeground3_nside256_nfreq201_band100_200.h5'
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_polforeground3_nside256_nfreq201_band100_200.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if self.unpolarized == True:
@@ -226,7 +244,10 @@ class SkyConstructor(object):
         if (self.nside != 128) or (self.nfreq != 241): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-        fpath = '/data4/paper/zionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5'
+        if os.path.exists('/data4/paper/'):
+            fpath = '/data4/paper/zionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5'
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5
         print 'Using ' + fpath
         data = h5py.File(fpath)
 
@@ -239,8 +260,10 @@ class SkyConstructor(object):
         if (self.nside != 64) or (self.nfreq != 31): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-
-        fpath = '/data4/paper/zionos/cora_maps/cora_polgalaxy1_nside64_nfreq31_band140_170.h5'
+        if os.path.exists('/data4/paper'):
+            fpath = '/data4/paper/zionos/cora_maps/cora_polgalaxy1_nside64_nfreq31_band140_170.h5'
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_polgalaxy1_nside64_nfreq31_band140_170.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if self.unpolarized == True:
@@ -383,7 +406,10 @@ class SkyConstructor(object):
         return I,Q,U,V
 
     def get_gsm_cube(self):
-        sys.path.append('/data4/paper/zionos/polskysim')
+        if os.path.exists('data4/paper/'):
+            sys.path.append('/data4/paper/zionos/polskysim')
+        else:
+            sys.path.append('/lustre/aoc/projects/hera/zmartino/zionos/polskysim')
         import gsm2016_mod
         # import astropy.coordinates as coord
         # import astropy.units as units

@@ -148,8 +148,12 @@ class VisibilitySimulation(object):
 
 
         elif self.ionosphere == 'constant':
-            RMs_npz_path = '/data4/paper/zionos/polskysim/IonRIME/RM_sim_data/'
-            RMs_npz_path += self.RMs_sequence_file_name
+            if os.path.exists('/data4/paper/zionos/'):
+                RMs_npz_path = '/data4/paper/zionos/polskysim/IonRIME/RM_sim_data/'
+                RMs_npz_path += self.RMs_sequence_file_name
+            elif os.path.exists('/lustre/aoc/projects/hera/zmartino/zionos/'):
+                RMs_npz_path = '/lustre/aoc/projects/hera/zmartino/zionos/polskysim/IonRIME/RM_sim_data/'
+                RMs_npz_path += self.RMs_sequence_file_name
 
             RMs_npz = np.load(RMs_npz_path)
             self.RMs = {k:RM for k, RM in enumerate(RMs_npz['RMs'])}
