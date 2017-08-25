@@ -51,6 +51,7 @@ class SkyConstructor(object):
             'skyL': self.skyL,
             'skyM': self.skyM,
             'skyN': self.skyN,
+            'skyUniformI':self.skyUniformI,
             'point_skyC': self.point_skyC,
             'point_skyD': self.point_skyD,
             'point_skyE': self.point_skyE,
@@ -61,13 +62,18 @@ class SkyConstructor(object):
 
         return skyGenerators
 
+    def skyUniformI(self):
+        I = np.ones((self.nfreq, self.npix))
+        Q,U,V = [np.zeros_like(I) for k in range(3)]
+        return I,Q,U,V
+
     def skyN(self):
         """fgs SCK generated
         nfreq 201
         band 100-200 MHz
         pfrac 0.01
         """
-        if os.path.exists('/lustre/aoc/projects/hera/zmartino')
+        if os.path.exists('/lustre/aoc/projects/hera/zmartino'):
             file_dir = '/lustre/aoc/projects/hera/zmartino/zionos/polskysim/fgs/pfrac001/'
         elif os.path.exists('/data4/paper'):
             file_dir = '/data4/paper/zionos/polskysim/fgs/pfrac001/'
@@ -185,7 +191,7 @@ class SkyConstructor(object):
         if (self.nside != 128) or (self.nfreq != 201): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-        if os.path.exists('/data4/paper/')
+        if os.path.exists('/data4/paper/'):
             fpath = '/data4/paper/zionos/cora_maps/cora_polforeground2_nside128_nfreq201_band100_200.h5'
         else:
             fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_polforeground2_nside128_nfreq201_band100_200.h5'
@@ -226,8 +232,10 @@ class SkyConstructor(object):
         if (self.nside != 128) or (self.nfreq != 201): raise ValueError("The nside or nfreq of the simulation does not match the requested sky maps.")
 
         import h5py
-
-        fpath = '/data4/paper/zionos/cora_maps/cora_21cm1_nside128_nfreq201_band100_200.h5'
+        if os.path.exists('/data4/paper/'):
+            fpath = '/data4/paper/zionos/cora_maps/cora_21cm1_nside128_nfreq201_band100_200.h5'
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_21cm1_nside128_nfreq201_band100_200.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
         if self.unpolarized == True:
@@ -247,7 +255,7 @@ class SkyConstructor(object):
         if os.path.exists('/data4/paper/'):
             fpath = '/data4/paper/zionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5'
         else:
-            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_maps/cora_21cm1_nside128_nfreq241_band140_170.h5'
         print 'Using ' + fpath
         data = h5py.File(fpath)
 

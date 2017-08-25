@@ -13,8 +13,10 @@ class Parameters:
 def txtname(n):
     # dpath = '/data4/paper/zionos/polskysim/IonRIME/InstrumentSimData/NicCST_Old/'
     # fname = 'Directivity ' + str(n) + ' MHz.txt'
-
-    dpath = '/data4/paper/zionos/polskysim/IonRIME/InstrumentSimData/NicCST/'
+    if os.path.exists('/data4/paper'):
+        dpath = '/data4/paper/zionos/polskysim/IonRIME/InstrumentSimData/NicCST/'
+    else:
+        dpath = '/lustre/aoc/projects/hera/zmartino/zionos/polskysim/IonRIME/InstrumentSimData/NicCST/'
     fname = 'HERA - E-pattern - ' + str(n) + 'MHz.txt'
     return dpath + fname
 
@@ -285,7 +287,7 @@ def make_ijones_spectrum(parameters_dict, verbose=False):
         solid_angle_spectrum.append(solid_angle)
 
         ijones[n] /= np.sqrt(peak_norm)
-        ijones[n] /= np.sqrt(solid_angle)
+        # ijones[n] /= np.sqrt(solid_angle)
 
         if verbose == True:
             print "norm is:", np.sqrt(peak_norm)
