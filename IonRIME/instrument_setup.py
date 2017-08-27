@@ -70,7 +70,7 @@ class InstrumentConstructor(object):
 
     def hera_NicCST(self, parameters):
         ijones, solid_angle, peak_norms = hnis.make_ijones_spectrum(parameters, verbose=True)
-        
+
         nu0 = str(int(self.nu_axis[0] / 1e6))
         nuf = str(int(self.nu_axis[-1] / 1e6))
         fname = "norms_ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + '.npz'
@@ -94,4 +94,4 @@ class InstrumentConstructor(object):
         return lcis.interpolate_jones_freq(Jdata, freqs, interp_type=self.interp_type)
 
     def analytic_dipole(self, parameters):
-        return irf.analytic_dipole_setup(self.nside, self.nfreq, z0_cza=self.z0_cza)
+        return irf.analytic_dipole_setup(self.nside, self.nfreq,sigma=self.dipole_hpbw, z0_cza=self.z0_cza)

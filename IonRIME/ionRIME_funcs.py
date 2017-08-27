@@ -600,7 +600,7 @@ def neighbors_of_neighbors(nside, th, phi):
     nn = hp.get_all_neighbours(nside, tn, phi=pn)
     return nn.flatten()
 
-def analytic_dipole_setup(nside, nfreq, z0_cza=None):
+def analytic_dipole_setup(nside, nfreq, sigma=0.4, z0_cza=None):
     def transform_basis(nside, jones, z0_cza, R_z0):
 
         npix = hp.nside2npix(nside)
@@ -649,8 +649,6 @@ def analytic_dipole_setup(nside, nfreq, z0_cza=None):
         ], dtype=np.complex128).transpose(2,0,1)
 
     jones_c = transform_basis(nside, jones_dipole, z0_cza, np.array(R_z0.mat))
-
-    sigma = 0.4
 
     G = np.exp(-(th_l/sigma)**2. /2.)
 
