@@ -51,7 +51,9 @@ class SkyConstructor(object):
             'skyL': self.skyL,
             'skyM': self.skyM,
             'skyN': self.skyN,
+            'skyPolNoiseA': self.skyPolNoiseA,
             'skyUniformI':self.skyUniformI,
+            'skyCORA_pol_galaxy': self.skyCORA_pol_galaxy,
             'point_skyC': self.point_skyC,
             'point_skyD': self.point_skyD,
             'point_skyE': self.point_skyE,
@@ -62,6 +64,36 @@ class SkyConstructor(object):
 
         return skyGenerators
 
+    def skyCORA_pol_galaxy(self):
+        if (self.nside != 128) or (self.nfreq != 201): raise ValueError('nside or nfreq does not match this sky model')
+
+        import h5py
+        if os.path.exists('/data4/paper/'):
+            raise Exception('Wrong system')
+        else:
+            fpath = '/lustre/aoc/projects/hera/zmartino/zionos/cora_models/galaxy_nside128_100-200MHz_nfreq201/map.h5'
+
+        data = h5py.File(fpath)
+        if self.unpolarized == True:
+            I = data['map'][:,0,:]
+            Q,U,V = [np.zeros((self.nfreq, self.npix)) for x in range(3)]
+        else:
+            I,Q,U,V = [data['map'][:,i,:] for i in [0,1,2,3]]
+
+        return I,Q,U,V
+
+    def skyPolNoiseA(self):
+        I = self.GSM2008()
+        V = np.zeros_like(I)
+        seed = 873470
+        np.random.seed(seed)
+
+        pfrac = 0.1
+        chi = np.random.rand(*I.shape)
+        Q = pfrac * I * np.cos(2. * chi)
+        U = pfrac * I * np.cos(2. * chi)
+
+        return I,Q,U,V
     def skyUniformI(self):
         I = np.ones((self.nfreq, self.npix))
         Q,U,V = [np.zeros_like(I) for k in range(3)]
