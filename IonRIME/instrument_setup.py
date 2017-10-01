@@ -5,6 +5,7 @@ import os
 import sys
 
 import hera_NicCST_instrument_setup as hnis
+import hera_CTP_instrument_setup as hcis
 import hera_hfss_instrument_setup as hhis
 import paper_hfss_instrument_setup as phis
 import legacy_cst_instrument_setup as lcis
@@ -41,6 +42,7 @@ class InstrumentConstructor(object):
 
         self.InstrumentDirectories = {
             'hera_NicCST': 'jones_save/HERA_NicCST/',
+            'hera_ctp': 'jones_save/HERA_CTP/',
             'hera_hfss': 'jones_save/HERA_HFSS/',
             'paper_hfss': 'jones_save/PAPER_HFSS/',
             'paper_feko': 'jones_save/PAPER/',
@@ -52,6 +54,7 @@ class InstrumentConstructor(object):
 
         self.InstrumentGenerators = {
             'hera_NicCST': self.hera_NicCST,
+            'hera_ctp': self.hera_ctp,
             'hera_hfss': self.hera_hfss,
             'paper_hfss': self.paper_hfss,
             'paper_feko': self.paper_feko,
@@ -70,6 +73,17 @@ class InstrumentConstructor(object):
 
     def hera_NicCST(self, parameters):
         ijones, solid_angle, peak_norms = hnis.make_ijones_spectrum(parameters, verbose=True)
+
+        nu0 = str(int(self.nu_axis[0] / 1e6))
+        nuf = str(int(self.nu_axis[-1] / 1e6))
+        fname = "norms_ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + '.npz'
+
+        save_path = self.InstrumentDirectories[self.instrument] + fname
+        np.savez(save_path, solid_angle=solid_angle, peak_norms=peak_norms)
+        return ijones
+
+    def hera_ctp(self, parameters):
+        ijones, solid_angle, peak_norms = hcis.make_ijones_spectrum(parameters, verbose=True)
 
         nu0 = str(int(self.nu_axis[0] / 1e6))
         nuf = str(int(self.nu_axis[-1] / 1e6))
