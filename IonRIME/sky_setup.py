@@ -7,6 +7,7 @@ import pygsm
 import ionRIME_funcs as irf
 import os
 import sys
+import h5py
 
 def Hz2GHz(freq):
     return freq / 1e9
@@ -37,6 +38,7 @@ class SkyConstructor(object):
 
         skyGenerators = {
             'unpol_GSM2008': self.unpol_GSM2008,
+            'MartaFGS': self.MartaFGS,
             'skyA': self.skyA,
             'skyB': self.skyB,
             'skyC': self.skyC,
@@ -63,6 +65,34 @@ class SkyConstructor(object):
         }
 
         return skyGenerators
+
+    def MartaFGS(self):
+        if self.nside not in [128, 256]:
+            raise Exception("nside is not 128 or 256. The only available maps are nside 128 or 256")
+
+        if self.nfreq != 201:
+            raise Exception("nfreq must be 201")
+
+        nu0 = int(self.nu_axis[0]*1e-6)
+        nuf = int(self.nu_axis[-1]*1e-6)
+
+        if (nu0, nuf) not in [(100,200), (50,150)]:
+            raise Exception("frequency band must be 100-200MHz or 50-150MHz")
+
+        fname = 'nside{}_nfreq{}_{}-{}MHz.h5'.format(self.nside, self.nfreq, nu0, nuf)
+        data_dir = '/lustre/aoc/projects/hera/zmartino/zionos/marta_foregrounds/'
+
+        rescale_factor = 1. # rescale the polarization amplitude
+
+        if self.unpolarized == True:
+            I,Q,U,V = self.unpol_GSM2008()
+        else:
+            h5f = h5py.File(data_dir + fname, 'r')
+            Q = h5f['Q'][:] * rescale_factor
+            U = h5f['U'][:] * rescale_factor
+            I = self.GSM2008()
+            V = np.zeros_like(I)
+        return I,Q,U,V
 
     def skyCORA_pol_galaxy(self):
         if (self.nside != 128) or (self.nfreq != 201): raise ValueError('nside or nfreq does not match this sky model')
