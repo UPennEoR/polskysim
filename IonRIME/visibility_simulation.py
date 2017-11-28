@@ -55,6 +55,12 @@ class VisibilitySimulation(object):
         if attribute_test is None:
             self.z0_cza = np.radians(120.7215) # latitude of HERA/PAPER
             parameters.update({'z0_cza':self.z0_cza})
+        # older input parameters files will not have an instrument_b setting
+        attribute_test = getattr(self, 'instrument_b',None)
+        if attribute_test is None:
+            self.instrument_b = 'same'
+            parameters.update({'instrument_b':self.instrument_b})
+
 
         ## Sky
         ## sky.shape = (self.nfreq, self.npix, 2,2)
@@ -78,10 +84,11 @@ class VisibilitySimulation(object):
         tmark0 = time.time()
 
         print "Setting up instrument."
-        instrument_init = InstrumentConstructor(parameters)
-        self.ijones = instrument_init.iJonesModel
+        instrument_a_init = InstrumentConstructor(parameters, antenna='a')
+        self.ijones = instrument_a_init.iJonesModel
 
-        self.ijonesH = np.transpose(self.ijones.conj(),(0,1,3,2))
+        instrument_b_init = InstrumentConstructor(parameters, antenna='b')
+        self.ijonesH = np.transpose(instrument_b_init.iJonesModel.conj(),(0,1,3,2))
 
         tmark_inst = time.time()
         print "Completed instrument setup in " + str(tmark_inst - tmark0)
@@ -99,9 +106,12 @@ class VisibilitySimulation(object):
 
         if self.ionosphere == 'none':
             self.ndays = 1
-
-        self.Vis = np.zeros(self.ndays * self.ntime * self.nfreq * 2 * 2, dtype='complex128')
-        self.Vis = self.Vis.reshape(self.ndays, self.ntime, self.nfreq, 2, 2)
+        if self.final_day_average is False:
+            self.Vis = np.zeros(self.ndays * self.ntime * self.nfreq * 2 * 2, dtype='complex128')
+            self.Vis = self.Vis.reshape(self.ndays, self.ntime, self.nfreq, 2, 2)
+        else:
+            self.Vis = np.zeros(1 * self.ntime * self.nfreq * 2 * 2, dtype='complex128')
+            self.Vis = self.Vis.reshape(1, self.ntime, self.nfreq, 2, 2)
 
         self.RMs = []
 
@@ -163,7 +173,12 @@ class VisibilitySimulation(object):
                 for ti in range(self.ntime):
                     self.UT_times[di].append(di)
 
-        for d in range(self.ndays):
+        if self.final_day_average is True:
+            Nd_use = 1
+        else:
+            Nd_use = self.ndays
+
+        for d in range(Nd_use):
             print "d is " + str(d)
             for t in range(self.ntime):
                 if self.point_source_sim is True:

@@ -61,7 +61,9 @@ class SkyConstructor(object):
             'point_skyE': self.point_skyE,
             'point_skyF': self.point_skyF,
             'point_skyG': self.point_skyG,
-            'point_skyH': self.point_skyH
+            'point_skyH': self.point_skyH,
+            'sim_group_test0': self.sim_group_test0,
+            'get_cora_polsky': self.get_cora_polsky,
         }
 
         return skyGenerators
@@ -515,7 +517,7 @@ class SkyConstructor(object):
 
         gal = galaxy.ConstrainedGalaxy()
         gal.nside = self.nside
-        gal.frequencies = self.nu_axis
+        gal.frequencies = self.nu_axis * 1e-6 # MHz - self.nu_axis is in Hz.
 
         stokes_cubes = gal.getpolsky()
         I,Q,U,V = [stokes_cubes[:,i,:] for i in range(4)]
@@ -547,4 +549,30 @@ class SkyConstructor(object):
     def unpol_GSM2008(self):
         I = self.GSM2008()
         Q,U,V = [np.zeros_like(I) for k in range(3)]
+        return I,Q,U,V
+
+    def sim_group_test0(self):
+        x_c = np.array([1.,0,0]) # unit vectors to be transformed by astropy
+        y_c = np.array([0,1.,0])
+        z_c = np.array([0,0,1.])
+
+        # The GSM is given in galactic coordinates. We will rotate it to J2000 equatorial coordinates.
+        axes_icrs = coord.SkyCoord(x=x_c, y=y_c, z=z_c, frame='icrs', representation='cartesian')
+        axes_gal = axes_icrs.transform_to('galactic')
+        axes_gal.representation = 'cartesian'
+
+        R = np.array(axes_gal.cartesian.xyz) # The 3D rotation matrix that defines the coordinate transformation.
+
+        I = np.zeros((self.nfreq, self.npix))
+
+        gsm = pygsm.GlobalSkyModel(freq_unit='MHz', interpolation='cubic')
+        I_150 = gsm.generate(150.)
+        rI_150 = irf.rotate_healpix_mindex(I_150, R)
+        urI_150 = irf.harmonic_ud_grade(rI_150, self.nside)
+
+        for i,nu in enumerate(self.nu_axis):
+            I[i,:] = urI_150
+
+        Q,U,V = [np.zeros_like(I) for k in range(3)]
+
         return I,Q,U,V

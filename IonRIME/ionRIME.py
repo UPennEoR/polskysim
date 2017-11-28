@@ -4,6 +4,7 @@ import sys, os
 import yaml
 from shutil import copyfile, rmtree
 import git
+import h5py
 
 
 if __name__ == "__main__":
@@ -51,12 +52,32 @@ if __name__ == "__main__":
     if P['circular_pol'] is False:
         print "No circular polarization! Booooo."
 
-    VS = VisibilitySimulation(P)
-    VS.run()
+    if P['MC_sky'] is False:
+        VS = VisibilitySimulation(P)
+        VS.run()
 
-    repo = git.Repo(search_parent_directories=True)
-    sha = repo.head.object.hexsha
+        repo = git.Repo(search_parent_directories=True)
+        sha = repo.head.object.hexsha
 
-    out_name = "visibility.npz"
+        out_name = "visibility.npz"
 
-    np.savez(out_dir + out_name, Vis=VS.Vis, parameters=P, git_hash=sha)
+        np.savez(out_dir + out_name, Vis=VS.Vis, parameters=P, git_hash=sha)
+
+    if P['MC_sky'] is True:
+        N_skies = P['MC_sky_realizations']
+
+        out_name = 'visibilities.h5'
+
+        h5f = h5py.File(out_dir + out_name, 'w')
+
+        for n in range(N_skies):
+            VS = VisibilitySimulation(P)
+            VS.run()
+            h5f.create_dataset(str(n), data=VS.Vis)
+
+        h5f.close()
+
+        repo = git.Repo(search_parent_directories=True)
+        sha = repo.head.object.hexsha
+
+        np.savez(out_dir + 'meta_data.npz', parameters=P, git_hash=sha)

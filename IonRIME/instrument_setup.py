@@ -3,6 +3,7 @@ import healpy as hp
 import ionRIME_funcs as irf
 import os
 import sys
+import errno
 
 import hera_NicCST_instrument_setup as hnis
 import hera_CTP_instrument_setup as hcis
@@ -11,10 +12,11 @@ import hera_nicsinuous_instrument_setup as hnsis
 import hera_hfss_instrument_setup as hhis
 import paper_hfss_instrument_setup as phis
 import legacy_cst_instrument_setup as lcis
+import sim_group_test0_instrument_setup as sgtest0
 
 
 class InstrumentConstructor(object):
-    def __init__(self, parameters):
+    def __init__(self, parameters, antenna='a'):
         for key in parameters:
             setattr(self, key, parameters[key])
 
@@ -38,6 +40,14 @@ class InstrumentConstructor(object):
             'm': self.m,
             'z0_cza': self.z0_cza})
 
+        if antenna == 'b':
+            if self.instrument_b != 'same':
+                self.antenna_model = self.instrument_b
+            else:
+                self.antenna_model = self.instrument
+        else:
+            self.antenna_model = self.instrument
+
         nu0 = str(int(self.nu_axis[0] / 1e6))
         nuf = str(int(self.nu_axis[-1] / 1e6))
         self.fname = "ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + ".npy"
@@ -51,10 +61,11 @@ class InstrumentConstructor(object):
             'paper_hfss': 'jones_save/PAPER_HFSS/',
             'paper_feko': 'jones_save/PAPER/',
             'hera_legacy': 'jones_save/',
-            'analytic_dipole': 'analytic_dipole/'
+            'analytic_dipole': 'analytic_dipole/',
+            'sim_group_test0': 'jones_save/sim_group_test0/'
         }
 
-        self.relative_path = self.InstrumentDirectories[self.instrument] + self.fname
+        self.relative_path = self.InstrumentDirectories[self.antenna_model] + self.fname
 
         self.InstrumentGenerators = {
             'hera_NicCST': self.hera_NicCST,
@@ -66,14 +77,21 @@ class InstrumentConstructor(object):
             'paper_feko': self.paper_feko,
             'hera_legacy': self.hera_legacy,
             'analytic_dipole': self.analytic_dipole,
+            'sim_group_test0': self.sim_group_test0,
         }
+
+        try:
+            os.makedirs(self.InstrumentDirectories[self.antenna_model])
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
 
         if os.path.exists(self.relative_path) is True:
             self.iJonesModel = np.load(self.relative_path)
             print "Restored Jones model"
         else:
-            self.iJonesModel = self.InstrumentGenerators[self.instrument](parameters)
-            if self.instrument != 'analytic_dipole':
+            self.iJonesModel = self.InstrumentGenerators[self.antenna_model](parameters)
+            if self.antenna_model != 'analytic_dipole':
                 np.save(self.relative_path, self.iJonesModel)
 
 
@@ -84,7 +102,7 @@ class InstrumentConstructor(object):
         nuf = str(int(self.nu_axis[-1] / 1e6))
         fname = "norms_ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + '.npz'
 
-        save_path = self.InstrumentDirectories[self.instrument] + fname
+        save_path = self.InstrumentDirectories[self.antenna_model] + fname
         np.savez(save_path, solid_angle=solid_angle, peak_norms=peak_norms)
         return ijones
 
@@ -95,7 +113,7 @@ class InstrumentConstructor(object):
         nuf = str(int(self.nu_axis[-1] / 1e6))
         fname = "norms_ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + '.npz'
 
-        save_path = self.InstrumentDirectories[self.instrument] + fname
+        save_path = self.InstrumentDirectories[self.antenna_model] + fname
         np.savez(save_path, solid_angle=solid_angle, peak_norms=peak_norms)
         return ijones
 
@@ -106,7 +124,7 @@ class InstrumentConstructor(object):
         nuf = str(int(self.nu_axis[-1] / 1e6))
         fname = "norms_ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + '.npz'
 
-        save_path = self.InstrumentDirectories[self.instrument] + fname
+        save_path = self.InstrumentDirectories[self.antenna_model] + fname
         np.savez(save_path, solid_angle=solid_angle, peak_norms=peak_norms)
         return ijones
 
@@ -117,7 +135,7 @@ class InstrumentConstructor(object):
         nuf = str(int(self.nu_axis[-1] / 1e6))
         fname = "norms_ijones" + "band_" + nu0 + "-" + nuf + "mhz_nfreq" + str(self.nfreq)+ "_nside" + str(self.nside) + '.npz'
 
-        save_path = self.InstrumentDirectories[self.instrument] + fname
+        save_path = self.InstrumentDirectories[self.antenna_model] + fname
         np.savez(save_path, solid_angle=solid_angle, peak_norms=peak_norms)
         return ijones
 
@@ -137,3 +155,6 @@ class InstrumentConstructor(object):
 
     def analytic_dipole(self, parameters):
         return irf.analytic_dipole_setup(self.nside, self.nfreq,sigma=self.dipole_hpbw, z0_cza=self.z0_cza)
+
+    def sim_group_test0(self, parameters):
+        return sgtest0.make_ijones_spectrum(parameters)
