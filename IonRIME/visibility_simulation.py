@@ -203,11 +203,15 @@ class VisibilitySimulation(object):
         mrot = np.exp(1j * self.m * RotAngle)
 
         It, Qt, Ut = [np.zeros((self.nfreq, self.npix)) for n in range(3)]
-
-        for fi in range(self.nfreq):
-            It[fi] = hp.alm2map(self.I_alm[fi] * mrot, self.nside, verbose=False)
-            Qt[fi] = hp.alm2map(self.Q_alm[fi] * mrot, self.nside, verbose=False)
-            Ut[fi] = hp.alm2map(self.U_alm[fi] * mrot, self.nside, verbose=False)
+        
+        if self.unpolarized == True:
+            for fi in range(self.nfreq):
+                It[fi] = hp.alm2map(self.I_alm[fi] * mrot, self.nside, verbose=False)
+        else:
+            for fi in range(self.nfreq):
+                It[fi] = hp.alm2map(self.I_alm[fi] * mrot, self.nside, verbose=False)
+                Qt[fi] = hp.alm2map(self.Q_alm[fi] * mrot, self.nside, verbose=False)
+                Ut[fi] = hp.alm2map(self.U_alm[fi] * mrot, self.nside, verbose=False)
 
         ## Ionosphere
         """

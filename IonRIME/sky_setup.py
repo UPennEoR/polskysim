@@ -521,6 +521,11 @@ class SkyConstructor(object):
 
         stokes_cubes = gal.getpolsky()
         I,Q,U,V = [stokes_cubes[:,i,:] for i in range(4)]
+        
+        if self.unpolarized == True:
+            Q *= 0
+            U *= 0
+            V *= 0
 
         return I,Q,U,V
 

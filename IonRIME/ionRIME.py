@@ -73,7 +73,31 @@ if __name__ == "__main__":
         for n in range(N_skies):
             VS = VisibilitySimulation(P)
             VS.run()
-            h5f.create_dataset(str(n), data=VS.Vis)
+            h5f.create_dataset('ionpol' + str(n), data=VS.Vis)
+
+            VS.ndays = 1
+            VS.ionosphere = 'none'
+            VS.final_day_average = False
+
+            VS.Vis = np.zeros(1 * VS.ntime * VS.nfreq * 2 * 2, dtype='complex128')
+            VS.Vis = VS.Vis.reshape(1, VS.ntime, VS.nfreq, 2, 2)
+
+            VS.run()
+            h5f.create_dataset('pol' + str(n), data=VS.Vis)
+
+            VS.Vis = np.zeros(1 * VS.ntime * VS.nfreq * 2 * 2, dtype='complex128')
+            VS.Vis = VS.Vis.reshape(1, VS.ntime, VS.nfreq, 2, 2)
+
+            VS.unpolarized = True
+            VS.Q *= 0
+            VS.U *= 0
+            VS.V *= 0
+
+            VS.Q_alm *= 8
+            VS.U_alm *= 0
+
+            VS.run()
+            h5f.create_dataset('unpol' + str(n), data=VS.Vis)
 
         h5f.close()
 
