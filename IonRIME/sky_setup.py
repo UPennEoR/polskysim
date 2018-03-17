@@ -64,6 +64,8 @@ class SkyConstructor(object):
             'point_skyH': self.point_skyH,
             'sim_group_test0': self.sim_group_test0,
             'get_cora_polsky': self.get_cora_polsky,
+            'unit_Q': self.unit_Q,
+            'unit_U': self.unit_U,
         }
 
         return skyGenerators
@@ -580,4 +582,14 @@ class SkyConstructor(object):
 
         Q,U,V = [np.zeros_like(I) for k in range(3)]
 
+        return I,Q,U,V
+
+    def unit_Q(self):
+        Q = np.ones((self.nfreq, self.npix))
+        I,U,V = [np.zeros_like(Q) for k in range(3)]
+        return I,Q,U,V
+
+    def unit_U(self):
+        U = np.ones((self.nfreq, self.npix))
+        I,Q,V = [np.zeros_like(U) for k in range(3)]
         return I,Q,U,V
