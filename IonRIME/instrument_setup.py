@@ -62,6 +62,7 @@ class InstrumentConstructor(object):
             'paper_feko': 'jones_save/PAPER/',
             'hera_legacy': 'jones_save/',
             'analytic_dipole': 'analytic_dipole/',
+            'airy_dipole': 'jones_save/airy_dipole/',
             'sim_group_test0': 'jones_save/sim_group_test0/'
         }
 
@@ -77,6 +78,7 @@ class InstrumentConstructor(object):
             'paper_feko': self.paper_feko,
             'hera_legacy': self.hera_legacy,
             'analytic_dipole': self.analytic_dipole,
+            'airy_dipole': self.airy_dipole,
             'sim_group_test0': self.sim_group_test0,
         }
 
@@ -155,6 +157,10 @@ class InstrumentConstructor(object):
 
     def analytic_dipole(self, parameters):
         return irf.analytic_dipole_setup(self.nside, self.nfreq,sigma=self.dipole_hpbw, z0_cza=self.z0_cza)
+
+    def airy_dipole(self, parameters):
+        a = 14.6/2. # HERA dish radius ...or was it 14.0?
+        return irf.airy_dipole_setup(self.nside, self.nu_axis, a, z0_cza=self.z0_cza)
 
     def sim_group_test0(self, parameters):
         return sgtest0.make_ijones_spectrum(parameters)

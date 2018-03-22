@@ -3,6 +3,8 @@ import math
 import healpy as hp
 from datetime import datetime
 
+import scipy.special as special
+
 import scipy.interpolate as interpolate
 
 import numba_funcs as irnf
@@ -656,6 +658,77 @@ def analytic_dipole_setup(nside, nfreq, sigma=0.4, z0_cza=None):
 
     jones_c *= G
     jones_out = np.broadcast_to(jones_c, (nfreq, npix, 2,2))
+
+    return jones_out
+
+def AiryBeam(th, lmbda, a):
+    k = 2. * np.pi / lmbda
+    B = np.abs(2. * special.jv(1, k * a * np.sin(th)) / (k * a * np.sin(th)))
+    B[np.where(np.abs(th) < 1e-10)[0]] = 1
+    B[np.where(th > np.pi/2.)[0]] = 0.
+    return B
+
+def airy_dipole_setup(nside, nu_axis, a, z0_cza=None):
+    def transform_basis(nside, jones, z0_cza, R_z0):
+
+        npix = hp.nside2npix(nside)
+        hpxidx = np.arange(npix)
+        cza, ra = hp.pix2ang(nside, hpxidx)
+
+        fR = R_z0
+
+        tb, pb = rotate_sphr_coords(fR, cza, ra)
+
+        cza_v = t_hat_cart(cza, ra)
+        ra_v = p_hat_cart(cza, ra)
+
+        tb_v = t_hat_cart(tb, pb)
+
+        fRcza_v = np.einsum('ab...,b...->a...', fR, cza_v)
+        fRra_v = np.einsum('ab...,b...->a...', fR, ra_v)
+
+        cosX = np.einsum('a...,a...', fRcza_v, tb_v)
+        sinX = np.einsum('a...,a...', fRra_v, tb_v)
+
+
+        basis_rot = np.array([[cosX, sinX],[-sinX, cosX]])
+        basis_rot = np.transpose(basis_rot,(2,0,1))
+
+        return np.einsum('...ab,...bc->...ac', jones, basis_rot)
+
+    if z0_cza is None:
+        z0_cza = np.radians(120.72)
+
+    nfreq = len(nu_axis)
+
+    npix = hp.nside2npix(nside)
+    hpxidx = np.arange(npix)
+    th, phi = hp.pix2ang(nside, hpxidx)
+
+    R_z0 = hp.rotator.Rotator(rot=[0,-np.degrees(z0_cza)])
+
+    th_l, phi_l = R_z0(th, phi)
+    phi_l[phi_l < 0] += 2. * np.pi
+
+    ct,st = np.cos(th_l), np.sin(th_l)
+    cp,sp = np.cos(phi_l), np.sin(phi_l)
+
+    jones_dipole = np.array([
+            [ct * cp, -sp],
+            [ct * sp, cp]
+        ], dtype=np.complex128).transpose(2,0,1)
+
+    jones_c = transform_basis(nside, jones_dipole, z0_cza, np.array(R_z0.mat))
+
+    c = 299792458.
+    # a = 14.6/2.
+
+    B = np.zeros((nfreq, npix,2,2))
+    for nu_i, nu in enumerate(nu_axis):
+        B[nu_i] = np.broadcast_to(AiryBeam(th_l, c/nu, a), (2,2,npix)).T
+
+    jones_c = np.broadcast_to(jones_c, (nfreq, npix, 2, 2))
+    jones_out = B * jones_c
 
     return jones_out
 
