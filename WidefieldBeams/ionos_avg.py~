@@ -1,5 +1,0 @@
-import numpy as np
-
-rm = np.random.normal(loc=1,scale=1)
-
-cosrm = np.cos(rm)
